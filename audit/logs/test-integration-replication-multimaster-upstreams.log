@@ -1,0 +1,29 @@
+
+===== integration/replication-multimaster-upstreams =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 428
+Testing integration/replication-multimaster-upstreams
+[ok]: REPLICAOF ADD configures first upstream and connects (627 ms)
+[ok]: REPLICAOF ADD appends second upstream (1 ms)
+[ok]: ROLE exposes multi-master upstream list (0 ms)
+[ok]: Replication works from first active upstream (1 ms)
+[ok]: Replica writes are forwarded to all configured upstream peers (0 ms)
+[ok]: REPLICAOF REMOVE current upstream switches to next configured upstream (1058 ms)
+[ok]: INFO replication reports multi-master link fields (2 ms)
+[ok]: REPLICAOF NO ONE clears configured upstreams (2 ms)
+[ok]: Check for memory leaks (pid 467) (508 ms)
+[ok]: Check for memory leaks (pid 449) (908 ms)
+[ok]: Check for memory leaks (pid 436) (527 ms)
+[1/1 done]: integration/replication-multimaster-upstreams (4 seconds)
+
+                   The End
+
+Execution time of different units:
+  4 seconds - integration/replication-multimaster-upstreams
+
+Test Summary: 11 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

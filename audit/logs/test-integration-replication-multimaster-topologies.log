@@ -1,0 +1,27 @@
+
+===== integration/replication-multimaster-topologies =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 99809
+Testing integration/replication-multimaster-topologies
+[ok]: 3-node chain converges with active-replica and no-forward enabled (1996 ms)
+[ok]: 3-node failover between configured upstreams (1888 ms)
+[ok]: 3-node full mesh survives churn and converges (697 ms)
+[ok]: Check for memory leaks (pid 99813) (513 ms)
+[ok]: 3-node queued replay drains after peer reconnect (1855 ms)
+[ok]: 3-node peer full sync after pending queue overflow (2032 ms)
+[ok]: Check for memory leaks (pid 209) (518 ms)
+[ok]: Check for memory leaks (pid 99834) (509 ms)
+[ok]: Check for memory leaks (pid 128) (510 ms)
+[1/1 done]: integration/replication-multimaster-topologies (11 seconds)
+
+                   The End
+
+Execution time of different units:
+  11 seconds - integration/replication-multimaster-topologies
+
+Test Summary: 9 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

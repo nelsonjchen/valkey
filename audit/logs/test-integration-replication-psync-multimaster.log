@@ -1,0 +1,22 @@
+
+===== integration/replication-psync-multimaster =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 719
+Testing integration/replication-psync-multimaster
+[ok]: Active-active link bootstrap for psync test (944 ms)
+[ok]: Replication stays consistent during repeated reconnects (1002 ms)
+[ok]: Check for memory leaks (pid 743) (510 ms)
+[ok]: Check for memory leaks (pid 726) (503 ms)
+[1/1 done]: integration/replication-psync-multimaster (4 seconds)
+
+                   The End
+
+Execution time of different units:
+  4 seconds - integration/replication-psync-multimaster
+
+Test Summary: 4 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK
