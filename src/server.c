@@ -4699,6 +4699,20 @@ int processCommand(client *c) {
         return C_OK;
     }
 
+    /* In active/active mode, accepting a local write that cannot be represented
+     * as RREPLAY creates permanent divergence: the command succeeds locally but
+     * is skipped by the forwarding path. Reject those writes before execution. */
+    if (server.active_replica && server.multi_master && !obey_client && !c->slot_migration_job && is_write_command) {
+        const char *rreplay_reason = NULL;
+        if (!replicationCanForwardCommandWithRReplay(c->cmd, c->argv, c->argc, &rreplay_reason)) {
+            rejectCommandFormat(c,
+                                "Command '%s' is not supported in active-replica multi-master mode: %s",
+                                c->cmd->fullname,
+                                rreplay_reason ? rreplay_reason : "cannot be represented as RREPLAY");
+            return C_OK;
+        }
+    }
+
     /* If the server is paused, block the client until the pause has ended. Replicas and slot
      * export clients are never paused to allow failover/slot migration to succeed. */
     if (!c->flag.replica && (!c->slot_migration_job || isImportSlotMigrationJob(c->slot_migration_job)) &&
