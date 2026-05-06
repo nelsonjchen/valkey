@@ -36,22 +36,16 @@ start_server {tags {"repl external:skip"}} {
             }
         }
 
-        test {RREPLAY blocks stream writes with generated side effects} {
+        test {Active-active rejects stream writes without a replay-safe form} {
             $node1 del mm:stream
             $node0 del mm:stream
 
-            $node1 xadd mm:stream * f v1
-            wait_for_condition 50 20 {
-                [$node1 xlen mm:stream] == 1
-            } else {
-                fail "local stream write was not applied on node1"
-            }
-
-            after 100
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 xadd mm:stream * f v1}
             assert_equal 0 [$node0 xlen mm:stream]
+            assert_equal 0 [$node1 xlen mm:stream]
         }
 
-        test {RREPLAY blocks relative TTL commands} {
+        test {Active-active rejects relative TTL commands without a replay-safe form} {
             $node0 set mm:ttl anchor
             wait_for_condition 100 50 {
                 [$node1 get mm:ttl] eq {anchor}
@@ -59,10 +53,10 @@ start_server {tags {"repl external:skip"}} {
                 fail "initial key did not replicate to node1"
             }
 
-            assert_equal 1 [$node1 expire mm:ttl 120]
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 expire mm:ttl 120}
             after 100
             assert_equal -1 [$node0 ttl mm:ttl]
-            assert {[$node1 ttl mm:ttl] > 0}
+            assert_equal -1 [$node1 ttl mm:ttl]
         }
 
         test {RREPLAY canonicalizes risky RMW commands and converges} {

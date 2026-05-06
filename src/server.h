@@ -3236,6 +3236,7 @@ ssize_t syncReadLine(int fd, char *ptr, ssize_t size, long long timeout);
 int prepareReplicasToWrite(void);
 void replicationFeedReplicas(int dictid, robj **argv, int argc);
 void replicationFeedPrimaryWithRReplay(int dictid, robj **argv, int argc);
+int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **argv, int argc, const char **reason);
 void replicationFeedStreamFromPrimaryStream(char *buf, size_t buflen);
 void replicationDetachUpstreamRuntimeClient(client *c);
 void resetReplicationBuffer(void);

@@ -17,6 +17,16 @@ start_server {overrides {save {}}} {
         $n config set replica-read-only no
     }
 
+    proc reset_mm_node {n} {
+        catch {$n config set multi-master-no-forward no}
+        $n replicaof no one
+        $n config set multi-master no
+        $n flushall
+        $n config set active-replica yes
+        $n config set multi-master yes
+        $n config set replica-read-only no
+    }
+
     test {3-node chain converges with active-replica and no-forward enabled} {
         $nodeB replicaof add $nodeA_host $nodeA_port
         $nodeC replicaof $nodeB_host $nodeB_port
@@ -55,11 +65,7 @@ start_server {overrides {save {}}} {
 
     test {3-node failover between configured upstreams} {
         foreach n [list $nodeA $nodeB $nodeC] {
-            $n replicaof no one
-            $n flushall
-            $n config set active-replica yes
-            $n config set multi-master yes
-            $n config set replica-read-only no
+            reset_mm_node $n
         }
 
         $nodeB replicaof add $nodeA_host $nodeA_port
@@ -91,11 +97,7 @@ start_server {overrides {save {}}} {
 
     test {3-node full mesh survives churn and converges} {
         foreach n [list $nodeA $nodeB $nodeC] {
-            $n replicaof no one
-            $n flushall
-            $n config set active-replica yes
-            $n config set multi-master yes
-            $n config set replica-read-only no
+            reset_mm_node $n
         }
 
         $nodeA replicaof add $nodeB_host $nodeB_port
@@ -163,11 +165,7 @@ start_server {overrides {save {}}} {
 
     test {3-node queued replay drains after peer reconnect} {
         foreach n [list $nodeA $nodeB $nodeC] {
-            $n replicaof no one
-            $n flushall
-            $n config set active-replica yes
-            $n config set multi-master yes
-            $n config set replica-read-only no
+            reset_mm_node $n
         }
 
         $nodeA replicaof add $nodeB_host $nodeB_port
@@ -243,11 +241,7 @@ start_server {overrides {save {}}} {
 
     test {3-node peer full sync after pending queue overflow} {
         foreach n [list $nodeA $nodeB $nodeC] {
-            $n replicaof no one
-            $n flushall
-            $n config set active-replica yes
-            $n config set multi-master yes
-            $n config set replica-read-only no
+            reset_mm_node $n
         }
 
         $nodeA replicaof add $nodeB_host $nodeB_port
