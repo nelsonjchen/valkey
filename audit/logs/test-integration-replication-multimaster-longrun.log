@@ -1,0 +1,24 @@
+
+===== integration/replication-multimaster-longrun =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 98156
+Testing integration/replication-multimaster-longrun
+[ok]: 3-node chain setup for long-run MM validation (1905 ms)
+[ok]: 3-node long-run divergence stability (84 ms)
+[ok]: 3-node dedupe-window pressure stays bounded (602 ms)
+[ok]: Check for memory leaks (pid 98182) (580 ms)
+[ok]: Check for memory leaks (pid 98171) (550 ms)
+[ok]: Check for memory leaks (pid 98160) (568 ms)
+[1/1 done]: integration/replication-multimaster-longrun (5 seconds)
+
+                   The End
+
+Execution time of different units:
+  5 seconds - integration/replication-multimaster-longrun
+
+Test Summary: 6 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

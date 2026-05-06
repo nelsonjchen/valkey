@@ -1,0 +1,27 @@
+
+===== integration/replication-multimaster-connect =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 97375
+Testing integration/replication-multimaster-connect
+[ok]: Connect to first upstream and replicate (525 ms)
+[ok]: Connect to additional upstreams (2 ms)
+[ok]: Per-peer PSYNC reconnect failover stress in concurrent mode (18241 ms)
+[ok]: Switch to second upstream and replicate (1057 ms)
+[ok]: Switch to third upstream and replicate (1052 ms)
+[ok]: Check for memory leaks (pid 97412) (530 ms)
+[ok]: Check for memory leaks (pid 97401) (510 ms)
+[ok]: Check for memory leaks (pid 97390) (514 ms)
+[ok]: Check for memory leaks (pid 97379) (513 ms)
+[1/1 done]: integration/replication-multimaster-connect (25 seconds)
+
+                   The End
+
+Execution time of different units:
+  25 seconds - integration/replication-multimaster-connect
+
+Test Summary: 9 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

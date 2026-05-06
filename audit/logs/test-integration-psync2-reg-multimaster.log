@@ -1,0 +1,23 @@
+
+===== integration/psync2-reg-multimaster =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 1158
+Testing integration/psync2-reg-multimaster
+[ok]: PSYNC2 multi-master setup (848 ms)
+[ok]: PSYNC2 multi-master survives link churn under writes (1443 ms)
+[ok]: Check for memory leaks (pid 1236) (514 ms)
+[ok]: Check for memory leaks (pid 1203) (508 ms)
+[ok]: Check for memory leaks (pid 1162) (513 ms)
+[1/1 done]: integration/psync2-reg-multimaster (5 seconds)
+
+                   The End
+
+Execution time of different units:
+  5 seconds - integration/psync2-reg-multimaster
+
+Test Summary: 5 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

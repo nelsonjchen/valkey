@@ -1,0 +1,35 @@
+[
+  {
+    "failures": [],
+    "name": "randomized supported-command convergence",
+    "runs": 2000,
+    "seed": 20260506,
+    "steps_per_run": 80
+  },
+  {
+    "converged": true,
+    "expected_counter_if_increments_commuted": 2,
+    "history": [
+      "A: INCR ctr -> canonical SET 1 ts=1/1",
+      "B: INCR ctr -> canonical SET 1 ts=1/1",
+      "deliver SET ctr=1 A/1 to B: stale",
+      "deliver SET ctr=1 B/1 to A: apply"
+    ],
+    "name": "concurrent canonicalized INCR loses one increment",
+    "values": {
+      "A": 1,
+      "B": 1
+    }
+  },
+  {
+    "converged": false,
+    "history": [
+      "A: unsupported XADD stream=entry-1 applied locally without RREPLAY"
+    ],
+    "name": "unsupported command remains local-only",
+    "values": {
+      "A": "entry-1",
+      "B": null
+    }
+  }
+]

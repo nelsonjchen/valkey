@@ -1,0 +1,35 @@
+
+===== integration/replication-multimaster-rreplay =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 98413
+Testing integration/replication-multimaster-rreplay
+[ok]: Replica link with active-replica enabled (941 ms)
+[ok]: RREPLAY LWW converges to latest write (29 ms)
+[ok]: RREPLAY blocks stream writes with generated side effects (105 ms)
+[ok]: RREPLAY blocks relative TTL commands (103 ms)
+[ok]: RREPLAY canonicalizes risky RMW commands and converges (2 ms)
+[ok]: RREPLAY still rejects risky raw replay frames (0 ms)
+[ok]: MVCCRESTORE enforces stale protection (1 ms)
+[ok]: RREPLAY MSET applies fresh keys without dropping the full command (2 ms)
+[ok]: INFO replication exposes multi-master scaffold state (3 ms)
+[ok]: Check for memory leaks (pid 98417) (500 ms)
+[ok]: RDB persists RREPLAY dedupe metadata (2836 ms)
+[ok]: Check for memory leaks (pid 98428) (560 ms)
+[ok]: RDB persists configured upstream metadata (43122 ms)
+[ok]: Check for memory leaks (pid 98512) (550 ms)
+[ok]: RDB MVCC cap persists newest key clocks first (3110 ms)
+[ok]: Check for memory leaks (pid 98599) (502 ms)
+[ok]: Check for memory leaks (pid 99694) (508 ms)
+[1/1 done]: integration/replication-multimaster-rreplay (52 seconds)
+
+                   The End
+
+Execution time of different units:
+  52 seconds - integration/replication-multimaster-rreplay
+
+Test Summary: 17 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

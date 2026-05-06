@@ -1,0 +1,22 @@
+
+===== integration/multimaster-psync =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 943
+Testing integration/multimaster-psync
+[ok]: Check for memory leaks (pid 976) (511 ms)
+[ok]: 2-node active-active heals after restart and psync (1700 ms)
+[ok]: Check for memory leaks (pid 1079) (524 ms)
+[ok]: Check for memory leaks (pid 949) (497 ms)
+[1/1 done]: integration/multimaster-psync (3 seconds)
+
+                   The End
+
+Execution time of different units:
+  3 seconds - integration/multimaster-psync
+
+Test Summary: 4 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

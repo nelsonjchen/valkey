@@ -1,0 +1,23 @@
+
+===== integration/replication-active =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 96698
+Testing integration/replication-active
+[ok]: Active replicas report role metadata (0 ms)
+[ok]: Active replicas propagate writes both directions (0 ms)
+[ok]: Active replicas propagate binary payloads (1 ms)
+[ok]: Check for memory leaks (pid 96736) (545 ms)
+[ok]: Check for memory leaks (pid 96702) (510 ms)
+[1/1 done]: integration/replication-active (3 seconds)
+
+                   The End
+
+Execution time of different units:
+  3 seconds - integration/replication-active
+
+Test Summary: 5 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

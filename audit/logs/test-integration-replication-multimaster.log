@@ -1,0 +1,32 @@
+
+===== integration/replication-multimaster =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 96861
+Testing integration/replication-multimaster
+[ok]: mesh all nodes up (734 ms)
+[ok]: mesh propagates writes over cycle links (1 ms)
+[ok]: mesh converges after sequential updates (411 ms)
+[ok]: Check for memory leaks (pid 96899) (519 ms)
+[ok]: Check for memory leaks (pid 96887) (516 ms)
+[ok]: Check for memory leaks (pid 96876) (523 ms)
+[ok]: Check for memory leaks (pid 96865) (498 ms)
+[ok]: ring all nodes up (2520 ms)
+[ok]: ring propagates writes over cycle links (1 ms)
+[ok]: ring converges after sequential updates (410 ms)
+[ok]: Check for memory leaks (pid 97107) (507 ms)
+[ok]: Check for memory leaks (pid 97096) (511 ms)
+[ok]: Check for memory leaks (pid 97085) (510 ms)
+[ok]: Check for memory leaks (pid 97074) (511 ms)
+[1/1 done]: integration/replication-multimaster (10 seconds)
+
+                   The End
+
+Execution time of different units:
+  10 seconds - integration/replication-multimaster
+
+Test Summary: 14 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK

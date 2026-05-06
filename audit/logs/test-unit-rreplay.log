@@ -1,0 +1,21 @@
+
+===== unit/rreplay =====
+Cleanup: may take some time... OK
+Starting test server at port 21079
+[ready]: 96587
+Testing unit/rreplay
+[ok]: RREPLAY command is registered (0 ms)
+[ok]: RREPLAY is rejected for normal clients (1 ms)
+[ok]: Check for memory leaks (pid 96591) (1233 ms)
+[1/1 done]: unit/rreplay (2 seconds)
+
+                   The End
+
+Execution time of different units:
+  2 seconds - unit/rreplay
+
+Test Summary: 3 passed, 0 failed
+
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK
