@@ -68,19 +68,15 @@ Deliver ==
         /\ nextId' = [nextId EXCEPT ![d] =
             IF @ <= f.ts THEN f.ts + 1 ELSE @]
 
-\* Models local commands rejected by rreplayCommandIsSupported after the
-\* command has already been applied locally. This intentionally has no net
-\* effect and is used to generate the unsupported-command counterexample.
-UnsupportedLocalWrite ==
+\* Models unsupported local write attempts after the fix: processCommand checks
+\* RREPLAY representability before execution, so the command is rejected and
+\* the dataset/clock/network are unchanged.
+UnsupportedWriteRejected ==
     /\ AllowUnsupported
-    /\ \E n \in Nodes, k \in Keys, v \in Values:
-        /\ nextId[n] <= MaxTs
-        /\ store' = [store EXCEPT ![n][k] =
-            [value |-> v, ts |-> nextId[n], origin |-> n, id |-> nextId[n]]]
-        /\ nextId' = [nextId EXCEPT ![n] = @ + 1]
-        /\ UNCHANGED <<seen, net>>
+    /\ \E n \in Nodes, k \in Keys, v \in Values: nextId[n] <= MaxTs
+    /\ UNCHANGED vars
 
-Next == LocalWrite \/ Deliver \/ UnsupportedLocalWrite
+Next == LocalWrite \/ Deliver \/ UnsupportedWriteRejected
 
 Spec == Init /\ [][Next]_vars
 

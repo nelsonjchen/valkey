@@ -13,6 +13,8 @@ State observed:
 
 Verdict: the branch is a promising experimental active/active prototype for a narrow command subset. It builds and its focused tests pass, and a small TLA+ model supports convergence for modeled supported writes. It is not production-ready or upstream-ready without a design document, stronger command gating, clearer semantics for RMW commands, and more persistence/restart coverage.
 
+Fix update: commit `2499712a2` adds pre-execution rejection for local active/active writes that cannot be represented as RREPLAY. The TLA+ model and simulator now reflect that fix by modeling unsupported write attempts as rejected no-ops.
+
 ## Build And Tests
 
 Environment:
@@ -66,27 +68,27 @@ TLC:
 - Supported-command model: no invariant violations.
 - Search size: 675,905 states generated, 159,245 distinct states.
 - Checked invariants: type safety, quiescent convergence, no own-origin in-flight messages.
-- Unsupported-command model: expected failure. A local unsupported write changes one node with no RREPLAY frame, so quiescent convergence is false.
+- Unsupported-command model: no invariant violations after modeling unsupported write attempts as rejected no-ops.
 
 Simulator:
 - 2,000 randomized supported-command runs, 80 steps each: no convergence failures after draining the network.
 - Counterexample 1: concurrent canonicalized `INCR` converges to `1` on both nodes, while a user expecting commutative counter semantics would expect `2`.
-- Counterexample 2: unsupported `XADD`/stream-like local write remains on the origin only.
+- Unsupported `XADD`/stream-like local write attempt is rejected before local mutation in the fixed model.
 
 ## Findings
 
-### P1: Unsupported Writes Can Permanently Diverge
+### Fixed P1: Unsupported Writes Can Permanently Diverge
 
-Unsupported commands are rejected only at replay-forwarding time. The command has already executed locally through normal command processing, then `replicationFeedPrimaryWithRReplay` logs and returns.
+Pre-fix behavior rejected unsupported commands only at replay-forwarding time. The command had already executed locally through normal command processing, then `replicationFeedPrimaryWithRReplay` logged and returned.
 
 Relevant code:
 - `src/server.c:3675` calls `replicationFeedPrimaryWithRReplay` after normal propagation handling.
 - `src/replication.c:1693` to `src/replication.c:1720` rejects streams, functions, TTL mutations, flushes, transactions, arbitrary-key commands, and other unsupported commands.
 - `src/replication.c:2433` to `src/replication.c:2439` logs "Skipping upstream RREPLAY forwarding" and returns.
 
-Impact: a user can issue a successful write in active/active mode and receive OK, while peers never receive it. The existing tests intentionally demonstrate this for `XADD` and `EXPIRE`, so this is not accidental.
+Impact before the fix: a user could issue a successful write in active/active mode and receive OK, while peers never received it. The old tests intentionally demonstrated this for `XADD` and `EXPIRE`.
 
-Recommendation: in `active-replica + multi-master` mode, either reject unsupported write commands before local execution, require an explicit unsafe/local-only mode, or expose command support boundaries prominently enough that clients cannot mistake this for general active/active Redis semantics.
+Fix: `processCommand` now rejects unsupported local writes before execution when `active-replica + multi-master` is enabled. Tests now assert that `XADD` and relative `EXPIRE` are rejected and do not mutate either node.
 
 ### P1: Canonicalized RMW Commands Converge But Lose Concurrent Update Semantics
 
