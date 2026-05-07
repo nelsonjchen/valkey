@@ -59,30 +59,26 @@ start_server {tags {"repl external:skip"}} {
             assert_equal -1 [$node1 ttl mm:ttl]
         }
 
-        test {RREPLAY canonicalizes risky RMW commands and converges} {
+        test {Active-active rejects lossy RMW commands without a replay-safe form} {
             $node0 del mm:rmw:append mm:rmw:incr mm:rmw:h
             $node1 del mm:rmw:append mm:rmw:incr mm:rmw:h
             $node0 zrem mm:rmw:z m1
             $node1 zrem mm:rmw:z m1
 
-            assert_equal 5 [$node1 append mm:rmw:append local]
-            assert_equal 1 [$node1 incr mm:rmw:incr]
-            assert_equal 2 [$node1 hincrby mm:rmw:h f 2]
-            assert_equal 2 [$node1 zincrby mm:rmw:z 2 m1]
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 append mm:rmw:append local}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 incr mm:rmw:incr}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 hincrby mm:rmw:h f 2}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 zincrby mm:rmw:z 2 m1}
 
-            wait_for_condition 100 100 {
-                [$node0 get mm:rmw:append] eq {local} &&
-                [$node0 get mm:rmw:incr] eq {1} &&
-                [$node0 hget mm:rmw:h f] eq {2} &&
-                [expr {abs([$node0 zscore mm:rmw:z m1] - 2.0)}] < 0.0001
-            } else {
-                fail "RMW canonical replay did not converge"
-            }
-
-            assert_equal "local" [$node1 get mm:rmw:append]
-            assert_equal "1" [$node1 get mm:rmw:incr]
-            assert_equal "2" [$node1 hget mm:rmw:h f]
-            assert {[expr {abs([$node1 zscore mm:rmw:z m1] - 2.0)}] < 0.0001}
+            after 100
+            assert_equal {} [$node0 get mm:rmw:append]
+            assert_equal {} [$node1 get mm:rmw:append]
+            assert_equal {} [$node0 get mm:rmw:incr]
+            assert_equal {} [$node1 get mm:rmw:incr]
+            assert_equal {} [$node0 hget mm:rmw:h f]
+            assert_equal {} [$node1 hget mm:rmw:h f]
+            assert_equal {} [$node0 zscore mm:rmw:z m1]
+            assert_equal {} [$node1 zscore mm:rmw:z m1]
         }
 
         test {RREPLAY still rejects risky raw replay frames} {

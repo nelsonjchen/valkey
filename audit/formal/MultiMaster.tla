@@ -68,15 +68,15 @@ Deliver ==
         /\ nextId' = [nextId EXCEPT ![d] =
             IF @ <= f.ts THEN f.ts + 1 ELSE @]
 
-\* Models unsupported local write attempts after the fix: processCommand checks
-\* RREPLAY representability before execution, so the command is rejected and
-\* the dataset/clock/network are unchanged.
-UnsupportedWriteRejected ==
+\* Models unsupported or lossy RMW local write attempts after the fixes:
+\* processCommand checks RREPLAY representability before execution, so the
+\* command is rejected and the dataset/clock/network are unchanged.
+UnsupportedOrRMWWriteRejected ==
     /\ AllowUnsupported
     /\ \E n \in Nodes, k \in Keys, v \in Values: nextId[n] <= MaxTs
     /\ UNCHANGED vars
 
-Next == LocalWrite \/ Deliver \/ UnsupportedWriteRejected
+Next == LocalWrite \/ Deliver \/ UnsupportedOrRMWWriteRejected
 
 Spec == Init /\ [][Next]_vars
 

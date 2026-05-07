@@ -1753,10 +1753,6 @@ static int rreplayCommandIsSupported(struct serverCommand *cmd, robj **argv, int
 int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
     if (reason) *reason = NULL;
 
-    /* Local RMW commands are replayable only after they execute, because the
-     * forwarding path canonicalizes them to absolute writes from local state. */
-    if (rreplayCommandIsRiskyRmw(cmd)) return 1;
-
     return rreplayCommandIsSupported(cmd, argv, argc, reason);
 }
 
