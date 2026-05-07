@@ -1566,8 +1566,8 @@ static int rreplaySetUsesUnsupportedTtlOptions(robj **argv, int argc) {
 }
 
 /* Raw read-modify-write commands are not replay-safe with command-level MVCC.
- * Incoming replay frames with these commands are rejected. Local writes are
- * canonicalized to deterministic absolute writes before wrapping in RREPLAY. */
+ * Incoming replay frames and local active/active writes with these commands are
+ * rejected until a merge strategy is explicitly designed for them. */
 static int rreplayCommandIsRiskyRmw(struct serverCommand *cmd) {
     if (cmd == NULL) return 0;
     return (cmd->proc == appendCommand || cmd->proc == getsetCommand ||
@@ -1577,117 +1577,24 @@ static int rreplayCommandIsRiskyRmw(struct serverCommand *cmd) {
             cmd->proc == hincrbyfloatCommand || cmd->proc == zincrbyCommand);
 }
 
-static robj *rreplayDupCurrentStringValueFromDb(int dbid, robj *keyobj) {
-    if (dbid < 0 || dbid >= server.dbnum || keyobj == NULL) return NULL;
-    robj *value = lookupKeyReadWithFlags(server.db[dbid], keyobj, LOOKUP_NOEFFECTS);
-    if (value == NULL || value->type != OBJ_STRING) return NULL;
-    return dupStringObject(value);
-}
+static int rreplayCommandIsAllowlisted(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
+    UNUSED(argv);
+    if (cmd == NULL) return 0;
 
-static robj **rreplayBuildSetCanonicalPayload(robj *keyobj, robj *valueobj, int keep_ttl, int *out_argc) {
-    if (out_argc) *out_argc = 0;
-    if (keyobj == NULL || valueobj == NULL) return NULL;
-
-    int argc = keep_ttl ? 4 : 3;
-    robj **argv = zmalloc(sizeof(robj *) * argc);
-    argv[0] = createStringObject("SET", 3);
-    argv[1] = dupStringObject(keyobj);
-    argv[2] = dupStringObject(valueobj);
-    if (keep_ttl) argv[3] = createStringObject("KEEPTTL", 7);
-    if (out_argc) *out_argc = argc;
-    return argv;
-}
-
-/* Convert risky local RMW writes into deterministic absolute writes before
- * wrapping them in RREPLAY, so replay stays convergent. */
-static robj **rreplayBuildCanonicalRmwPayload(int dbid, struct serverCommand *cmd, robj **argv, int argc, int *out_argc, const char **reason) {
-    if (out_argc) *out_argc = 0;
-    if (reason) *reason = "invalid";
-    if (cmd == NULL || argv == NULL || argc <= 0) return NULL;
-    if (dbid < 0 || dbid >= server.dbnum) {
-        if (reason) *reason = "invalid dbid for canonical RMW replay";
-        return NULL;
+    if (cmd->proc == setCommand || cmd->proc == msetCommand || cmd->proc == mvccrestoreCommand) return 1;
+    if (cmd->proc == delCommand) {
+        if (argc == 2) return 1;
+        if (reason) *reason = "multi-key DEL is unsupported in replay";
+        return 0;
     }
 
-    if (cmd->proc == getsetCommand) {
-        if (argc != 3) {
-            if (reason) *reason = "GETSET arity mismatch";
-            return NULL;
-        }
-        return rreplayBuildSetCanonicalPayload(argv[1], argv[2], 0, out_argc);
+    if (cmd->proc == hsetCommand || cmd->proc == zaddCommand) {
+        if (reason) *reason = "partial collection mutations need full-value or CRDT semantics";
+        return 0;
     }
 
-    if (cmd->proc == appendCommand || cmd->proc == incrCommand || cmd->proc == decrCommand ||
-        cmd->proc == incrbyCommand || cmd->proc == decrbyCommand || cmd->proc == incrbyfloatCommand) {
-        robj *current = rreplayDupCurrentStringValueFromDb(dbid, argv[1]);
-        if (current == NULL) {
-            if (reason) *reason = "unable to read resulting string value for canonical replay";
-            return NULL;
-        }
-        robj **payload = rreplayBuildSetCanonicalPayload(argv[1], current, 1, out_argc);
-        decrRefCount(current);
-        return payload;
-    }
-
-    if (cmd->proc == hincrbyCommand || cmd->proc == hincrbyfloatCommand) {
-        if (argc != 4) {
-            if (reason) *reason = "HINCR* arity mismatch";
-            return NULL;
-        }
-        robj *hash = lookupKeyReadWithFlags(server.db[dbid], argv[1], LOOKUP_NOEFFECTS);
-        if (hash == NULL || hash->type != OBJ_HASH) {
-            if (reason) *reason = "unable to read resulting hash value for canonical replay";
-            return NULL;
-        }
-
-        robj *field = getDecodedObject(argv[2]);
-        robj *value = hashTypeGetValueObject(hash, objectGetVal(field));
-        decrRefCount(field);
-        if (value == NULL) {
-            if (reason) *reason = "unable to read resulting hash field for canonical replay";
-            return NULL;
-        }
-
-        robj **payload = zmalloc(sizeof(robj *) * 4);
-        payload[0] = createStringObject("HSET", 4);
-        payload[1] = dupStringObject(argv[1]);
-        payload[2] = dupStringObject(argv[2]);
-        payload[3] = value;
-        if (out_argc) *out_argc = 4;
-        return payload;
-    }
-
-    if (cmd->proc == zincrbyCommand) {
-        if (argc != 4) {
-            if (reason) *reason = "ZINCRBY arity mismatch";
-            return NULL;
-        }
-        robj *zobj = lookupKeyReadWithFlags(server.db[dbid], argv[1], LOOKUP_NOEFFECTS);
-        if (zobj == NULL || zobj->type != OBJ_ZSET) {
-            if (reason) *reason = "unable to read resulting zset value for canonical replay";
-            return NULL;
-        }
-
-        robj *member = getDecodedObject(argv[3]);
-        double score = 0;
-        int score_ok = zsetScore(zobj, objectGetVal(member), &score);
-        decrRefCount(member);
-        if (score_ok == C_ERR) {
-            if (reason) *reason = "unable to read resulting zset member for canonical replay";
-            return NULL;
-        }
-
-        robj **payload = zmalloc(sizeof(robj *) * 4);
-        payload[0] = createStringObject("ZADD", 4);
-        payload[1] = dupStringObject(argv[1]);
-        payload[2] = createStringObjectFromLongDouble(score, 0);
-        payload[3] = dupStringObject(argv[3]);
-        if (out_argc) *out_argc = 4;
-        return payload;
-    }
-
-    if (reason) *reason = "unsupported risky RMW command for canonical replay";
-    return NULL;
+    if (reason) *reason = "command is outside the active-active replay allowlist";
+    return 0;
 }
 
 static int rreplayCommandIsSupported(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
@@ -1729,6 +1636,8 @@ static int rreplayCommandIsSupported(struct serverCommand *cmd, robj **argv, int
         if (reason) *reason = "command is temporarily blocked in replay (risky read-modify-write semantics)";
         return 0;
     }
+
+    if (!rreplayCommandIsAllowlisted(cmd, argv, argc, reason)) return 0;
 
     getKeysResult result;
     initGetKeysResult(&result);
@@ -2421,27 +2330,12 @@ void replicationFeedPrimaryWithRReplay(int dictid, robj **argv, int argc) {
     struct serverCommand *payload_cmd = lookupCommand(argv, argc);
     robj **payload_argv = argv;
     int payload_argc = argc;
-    int payload_owned = 0;
-
-    if (rreplayCommandIsRiskyRmw(payload_cmd)) {
-        const char *canonical_reason = NULL;
-        payload_argv = rreplayBuildCanonicalRmwPayload(dictid, payload_cmd, argv, argc, &payload_argc, &canonical_reason);
-        if (payload_argv == NULL || payload_argc <= 0) {
-            serverLog(LL_WARNING,
-                      "Skipping upstream RREPLAY forwarding for risky command '%s': %s",
-                      argv[0] ? (char *)objectGetVal(argv[0]) : "?", canonical_reason ? canonical_reason : "unsupported");
-            return;
-        }
-        payload_owned = 1;
-        payload_cmd = lookupCommand(payload_argv, payload_argc);
-    }
 
     const char *reason = NULL;
     if (!rreplayCommandIsSupported(payload_cmd, payload_argv, payload_argc, &reason)) {
         serverLog(LL_WARNING,
                   "Skipping upstream RREPLAY forwarding for command '%s': %s",
                   payload_argv[0] ? (char *)objectGetVal(payload_argv[0]) : "?", reason ? reason : "unsupported");
-        if (payload_owned) freeOwnedArgvVector(payload_argv, payload_argc);
         return;
     }
 
@@ -2475,7 +2369,6 @@ void replicationFeedPrimaryWithRReplay(int dictid, robj **argv, int argc) {
         decrRefCount(frame_argv[j]);
     }
     zfree(frame_argv);
-    if (payload_owned) freeOwnedArgvVector(payload_argv, payload_argc);
 }
 
 /* This is a debugging function that gets called when we detect something

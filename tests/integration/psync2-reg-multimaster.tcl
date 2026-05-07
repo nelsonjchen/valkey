@@ -22,7 +22,7 @@ start_server {overrides {save {} active-replica yes multi-master yes replica-rea
 
     test {PSYNC2 multi-master survives link churn under writes} {
         for {set i 0} {$i < 80} {incr i} {
-            $R(0) incr mm:counter
+            $R(0) set mm:counter $i
             if {($i % 8) == 0} {
                 catch {$R(1) client kill type master}
             }

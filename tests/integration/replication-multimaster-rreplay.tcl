@@ -60,10 +60,12 @@ start_server {tags {"repl external:skip"}} {
         }
 
         test {Active-active rejects lossy RMW commands without a replay-safe form} {
-            $node0 del mm:rmw:append mm:rmw:incr mm:rmw:h
-            $node1 del mm:rmw:append mm:rmw:incr mm:rmw:h
-            $node0 zrem mm:rmw:z m1
-            $node1 zrem mm:rmw:z m1
+            foreach n [list $node0 $node1] {
+                $n del mm:rmw:append
+                $n del mm:rmw:incr
+                $n del mm:rmw:h
+                $n del mm:rmw:z
+            }
 
             assert_error {*not supported in active-replica multi-master mode*} {$node1 append mm:rmw:append local}
             assert_error {*not supported in active-replica multi-master mode*} {$node1 incr mm:rmw:incr}
@@ -79,6 +81,40 @@ start_server {tags {"repl external:skip"}} {
             assert_equal {} [$node1 hget mm:rmw:h f]
             assert_equal {} [$node0 zscore mm:rmw:z m1]
             assert_equal {} [$node1 zscore mm:rmw:z m1]
+        }
+
+        test {Active-active rejects partial collection and multi-key mutations} {
+            foreach n [list $node0 $node1] {
+                $n del mm:partial:h
+                $n del mm:partial:z
+                $n del mm:partial:s
+                $n del mm:partial:l
+                $n del mm:partial:rename-src
+                $n del mm:partial:rename-dst
+                $n del mm:partial:del-a
+                $n del mm:partial:del-b
+            }
+
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 hset mm:partial:h f v}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 zadd mm:partial:z 1 m}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 sadd mm:partial:s m}
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 lpush mm:partial:l v}
+
+            $node1 set mm:partial:rename-src v
+            wait_for_condition 100 50 {
+                [$node0 get mm:partial:rename-src] eq {v}
+            } else {
+                fail "initial rename source did not replicate"
+            }
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 rename mm:partial:rename-src mm:partial:rename-dst}
+            assert_equal v [$node1 get mm:partial:rename-src]
+            assert_equal {} [$node1 get mm:partial:rename-dst]
+
+            $node1 set mm:partial:del-a a
+            $node1 set mm:partial:del-b b
+            assert_error {*not supported in active-replica multi-master mode*} {$node1 del mm:partial:del-a mm:partial:del-b}
+            assert_equal a [$node1 get mm:partial:del-a]
+            assert_equal b [$node1 get mm:partial:del-b]
         }
 
         test {RREPLAY still rejects risky raw replay frames} {
@@ -107,7 +143,9 @@ start_server {tags {"repl external:skip"}} {
             $node0 set mm:mset:tmp2 keep
             set k1_payload [$node0 dump mm:mset:tmp1]
             set k2_payload [$node0 dump mm:mset:tmp2]
-            $node0 del mm:mset:tmp1 mm:mset:tmp2 mm:mset:k1 mm:mset:k2
+            foreach key {mm:mset:tmp1 mm:mset:tmp2 mm:mset:k1 mm:mset:k2} {
+                $node0 del $key
+            }
             set base_clock [s -1 mvcc_clock]
             set k1_ts [expr {$base_clock + 10}]
             set k2_ts [expr {$base_clock + 1000}]

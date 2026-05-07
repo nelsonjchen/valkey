@@ -8,7 +8,7 @@ VARIABLES store, seen, net, nextId
 vars == <<store, seen, net, nextId>>
 
 Frame ==
-    [origin: Nodes, id: 1..MaxTs, key: Keys, value: Values, ts: 1..MaxTs]
+    [origin: Nodes, id: 1..MaxTs, key: Keys, value: Values \cup {None}, ts: 1..MaxTs]
 
 Msg == [dst: Nodes, frame: Frame]
 
@@ -54,6 +54,17 @@ LocalWrite ==
            /\ net' = net \cup {[dst |-> d, frame |-> f] : d \in Nodes \ {n}}
            /\ nextId' = [nextId EXCEPT ![n] = @ + 1]
 
+LocalDelete ==
+    \E n \in Nodes, k \in Keys:
+        /\ nextId[n] <= MaxTs
+        /\ LET f == [origin |-> n, id |-> nextId[n], key |-> k,
+                     value |-> None, ts |-> nextId[n]] IN
+           /\ store' = [store EXCEPT ![n][k] =
+                [value |-> None, ts |-> f.ts, origin |-> n, id |-> f.id]]
+           /\ seen' = seen
+           /\ net' = net \cup {[dst |-> d, frame |-> f] : d \in Nodes \ {n}}
+           /\ nextId' = [nextId EXCEPT ![n] = @ + 1]
+
 Deliver ==
     \E msg \in net:
         LET d == msg.dst
@@ -76,7 +87,7 @@ UnsupportedOrRMWWriteRejected ==
     /\ \E n \in Nodes, k \in Keys, v \in Values: nextId[n] <= MaxTs
     /\ UNCHANGED vars
 
-Next == LocalWrite \/ Deliver \/ UnsupportedOrRMWWriteRejected
+Next == LocalWrite \/ LocalDelete \/ Deliver \/ UnsupportedOrRMWWriteRejected
 
 Spec == Init /\ [][Next]_vars
 

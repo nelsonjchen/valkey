@@ -5,7 +5,8 @@ The simulator mirrors the branch's command-level RREPLAY/MVCC shape:
 - local writes are applied immediately and forwarded as replay frames;
 - incoming frames use per-key LWW with deterministic tie-breaks;
 - seen replay ids make duplicate delivery idempotent;
-- unsupported and lossy RMW operations are rejected before local mutation.
+- unsupported, lossy RMW, and partial collection operations are rejected before
+  local mutation.
 
 It is deliberately not a Redis emulator. Its job is to search protocol-level
 traces and expose where convergence differs from stronger user expectations.
@@ -78,6 +79,16 @@ class Sim:
         n.clock = max(n.clock, meta.ts)
         return False
 
+    def apply_del(self, n: Node, key: Key, meta: Meta) -> bool:
+        current = n.meta.get(key, ZERO)
+        if self.better(meta, current):
+            n.data.pop(key, None)
+            n.meta[key] = meta
+            n.clock = max(n.clock, meta.ts)
+            return True
+        n.clock = max(n.clock, meta.ts)
+        return False
+
     def fanout(self, src: str, frame: Frame) -> None:
         for dst in self.nodes:
             if dst != src:
@@ -99,6 +110,14 @@ class Sim:
         frame = Frame(src, meta.rid, meta.ts, "MSET", tuple(items.items()))
         self.fanout(src, frame)
         self.history.append(f"{src}: MSET {items} ts={meta.ts}/{meta.rid}")
+
+    def local_del(self, src: str, key: Key) -> None:
+        n = self.nodes[src]
+        meta = self.stamp(n)
+        self.apply_del(n, key, meta)
+        frame = Frame(src, meta.rid, meta.ts, "DEL", (key,))
+        self.fanout(src, frame)
+        self.history.append(f"{src}: DEL {key} ts={meta.ts}/{meta.rid}")
 
     def local_incr(self, src: str, key: Key, amount: int = 1) -> None:
         self.history.append(f"{src}: INCR {key} rejected before local mutation")
@@ -127,6 +146,10 @@ class Sim:
             key, value = frame.args
             changed = self.apply_abs(n, key, value, meta)
             self.history.append(f"deliver SET {key}={value} {frame.origin}/{frame.rid} to {dst}: {'apply' if changed else 'stale'}")
+        elif frame.op == "DEL":
+            (key,) = frame.args
+            changed = self.apply_del(n, key, meta)
+            self.history.append(f"deliver DEL {key} {frame.origin}/{frame.rid} to {dst}: {'apply' if changed else 'stale'}")
         elif frame.op == "MSET":
             applied = []
             for key, value in frame.args:
@@ -174,9 +197,12 @@ def rmw_rejection() -> dict:
 def unsupported_counterexample() -> dict:
     sim = Sim(nodes=("A", "B"), seed=2)
     sim.unsupported_local("A", "stream", "entry-1")
+    sim.unsupported_local("B", "hash", "field=value", op="HSET")
+    sim.unsupported_local("A", "zset", "member=1", op="ZADD")
+    sim.unsupported_local("B", "rename-src", "rename-dst", op="RENAME")
     sim.drain()
     return {
-        "name": "unsupported command is rejected before local mutation",
+        "name": "unsupported and partial commands are rejected before local mutation",
         "values": sim.values_by_node("stream"),
         "converged": sim.converged(),
         "history": sim.history,
@@ -188,12 +214,14 @@ def randomized_supported(seed: int, runs: int, steps: int) -> dict:
     for run in range(runs):
         sim = Sim(seed=seed + run)
         for _ in range(steps):
-            op = sim.rng.choice(["SET", "MSET", "INCR", "DELIVER", "DUP"])
+            op = sim.rng.choice(["SET", "MSET", "DEL", "INCR", "DELIVER", "DUP"])
             node = sim.rng.choice(list(sim.nodes))
             if op == "SET":
                 sim.local_set(node, sim.rng.choice(["x", "y"]), sim.rng.choice(["v1", "v2", "v3"]))
             elif op == "MSET":
                 sim.local_mset(node, {"x": sim.rng.choice(["v1", "v2"]), "y": sim.rng.choice(["v1", "v2"])})
+            elif op == "DEL":
+                sim.local_del(node, sim.rng.choice(["x", "y"]))
             elif op == "INCR":
                 sim.local_incr(node, "ctr")
             elif op == "DUP":

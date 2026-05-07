@@ -21,9 +21,12 @@
   {
     "converged": true,
     "history": [
-      "A: unsupported XADD stream=entry-1 rejected before local mutation"
+      "A: unsupported XADD stream=entry-1 rejected before local mutation",
+      "B: unsupported HSET hash=field=value rejected before local mutation",
+      "A: unsupported ZADD zset=member=1 rejected before local mutation",
+      "B: unsupported RENAME rename-src=rename-dst rejected before local mutation"
     ],
-    "name": "unsupported command is rejected before local mutation",
+    "name": "unsupported and partial commands are rejected before local mutation",
     "values": {
       "A": null,
       "B": null

@@ -1,149 +1,137 @@
-# bet0x Valkey Active/Active Fork Audit
+# bet0x Valkey Active/Active Audit Report
 
 Date: 2026-05-06
 
-## Summary
+## Scope
 
-Target: `bet0x/valkey` branch `unstable` at `9b2284900efa42e205e421ed6307019da5b15497`.
+Reviewed implementation:
+- Original fork target: `bet0x/valkey` branch `unstable`, commit `9b2284900efa42e205e421ed6307019da5b15497`.
+- Rebased audit branch: `audit/bet0x-active-active-fix-rebased`, based on `valkey-io/valkey:unstable` commit `6c9d7fc263dd4dfe07460f7ed6de63295890b77a`.
+- Backup branch before rebase: `audit/bet0x-active-active-fix-pre-rebase`.
 
-State observed:
-- Fork is 13 commits ahead and 187 commits behind `valkey-io/valkey:unstable`.
-- `valkey-io/valkey#512` remains open with no upstream PR from `bet0x`.
-- The implementation is explicitly documented as experimental in `valkey-multimaster-setup.md`.
+The reviewed implementation adds active/active replication controls, `REPLICAOF ADD/REMOVE`, internal `RREPLAY`, `MVCCRESTORE`, MVCC key clocks, replay dedupe, peer replay queues, RDB AUX metadata, and INFO/ROLE telemetry.
 
-Verdict: the branch is a promising experimental active/active prototype for a narrow command subset. It builds and its focused tests pass, and a small TLA+ model supports convergence for modeled supported writes. It is not production-ready or upstream-ready without a design document, stronger command gating, clearer semantics for RMW commands, and more persistence/restart coverage.
+## Current Result
 
-Fix update: commit `2499712a2` adds pre-execution rejection for local active/active writes that cannot be represented as RREPLAY. The follow-up RMW fix also rejects lossy read-modify-write commands before local mutation. The TLA+ model and simulator now reflect both fixes by modeling unsupported/RMW attempts as rejected no-ops.
+The rebased branch builds and the focused active/active suites pass after local fixes. The correctness envelope is now deliberately narrow:
+- Allowed local/replay writes: `SET`, `MSET`, single-key `DEL`, and internal `MVCCRESTORE`.
+- Rejected before mutation: streams, functions, relative TTL mutation, transactions, RMW commands such as `INCR`/`APPEND`/`HINCRBY`/`ZINCRBY`, partial collection mutations such as `HSET`/`ZADD`/`SADD`/`LPUSH`, `RENAME`, and multi-key `DEL`.
 
-## Build And Tests
+That narrower policy is intentional. With key-level LWW/MVCC, partial collection deltas and multi-key operations can otherwise converge in some traces while diverging in others.
 
-Environment:
-- macOS 26.4.1 arm64
-- OpenJDK 21.0.6
-- `clang`, `make`, `tclsh` available
-- Built binaries: `valkey-server` and `valkey-cli` report git `9b228490`
+## Verification
 
 Build:
-- `make -j$(sysctl -n hw.ncpu)` completed successfully.
-- Only visible warning was from vendored `linenoise`.
-- `git diff --check upstream/unstable...HEAD` reported no whitespace errors.
+- `make -j$(sysctl -n hw.ncpu)` passed on the rebased branch.
 
 Focused tests:
 
 | Test | Result |
 | --- | --- |
 | `unit/rreplay` | 3 passed, 0 failed |
-| `integration/replication-active` | 5 passed, 0 failed |
+| `integration/replication-multimaster-rreplay` | 18 passed, 0 failed |
 | `integration/replication-multimaster` | 14 passed, 0 failed |
-| `integration/replication-multimaster-connect` | 9 passed, 0 failed |
-| `integration/replication-multimaster-longrun` | 6 passed, 0 failed |
-| `integration/replication-multimaster-rreplay` | 17 passed, 0 failed |
-| `integration/replication-multimaster-topologies` | 9 passed, 0 failed |
 | `integration/replication-multimaster-upstreams` | 11 passed, 0 failed |
-| `integration/replication-psync-multimaster` | 4 passed, 0 failed |
+| `integration/replication-multimaster-topologies` | 9 passed, 0 failed |
+| `integration/replication-active` | 5 passed, 0 failed |
 | `integration/multimaster-psync` | 4 passed, 0 failed |
 | `integration/psync2-reg-multimaster` | 5 passed, 0 failed |
 
-Total focused result: 87 passed, 0 failed.
-
-Logs are under `audit/logs/test-*.log`.
-
-## Public Surface Added
-
-The branch adds or changes:
-- Config: `active-replica`, `multi-master`, `multi-master-no-forward`, `rreplay-pending-max-entries`, `mvcc-rdb-clock-max-entries`.
-- Commands: `REPLICAOF ADD`, `REPLICAOF REMOVE`, internal `RREPLAY`, and `MVCCRESTORE`.
-- INFO/ROLE output: active replica state, configured upstreams, runtime links, replay tx/rx/ack counters, replay backlog, pending/dropped/fullsync counters, MVCC clock fields, replica UUIDs.
-- Persistence: RDB AUX metadata for configured upstreams, upstream runtime, pending replay frames, replay dedupe entries, and MVCC key clocks.
-
-## Formal And Simulation Results
-
-Artifacts:
-- TLA+ spec: `audit/formal/MultiMaster.tla`
-- TLC configs: `audit/formal/MultiMaster-supported.cfg`, `audit/formal/MultiMaster-unsupported.cfg`
-- Simulator: `audit/sim/mm_sim.py`
-- Logs/results: `audit/logs/tlc-*.log`, `audit/logs/simulator.json`
-
-TLC:
-- Supported-command model: no invariant violations.
-- Search size: 675,905 states generated, 159,245 distinct states.
-- Checked invariants: type safety, quiescent convergence, no own-origin in-flight messages.
-- Unsupported-command model: no invariant violations after modeling unsupported write attempts as rejected no-ops.
+Formal/model checks:
+- `audit/formal/MultiMaster-supported.cfg`: no TLC invariant violations; 5,510,617 states generated, 1,167,907 distinct states.
+- `audit/formal/MultiMaster-unsupported.cfg`: no TLC invariant violations; 3,515 states generated, 925 distinct states.
+- Invariants checked: type safety, convergence after network quiescence, and no own-origin in-flight messages.
 
 Simulator:
-- 2,000 randomized supported-command runs, 80 steps each: no convergence failures after draining the network.
-- Concurrent `INCR` and unsupported `XADD`/stream-like local write attempts are rejected before local mutation in the fixed model.
+- `audit/sim/mm_sim.py --runs 2000 --steps 80`: no convergence failures after draining the network.
+- Simulator now models `SET`, `MSET`, single-key `DEL`, duplicate delivery, own-origin drops, rejected `INCR`, and rejected unsupported/partial commands.
 
-## Findings
+## Fixed Locally
 
-### Fixed P1: Unsupported Writes Can Permanently Diverge
+### 1. Unsupported Writes Mutated Locally Before Being Dropped
 
-Pre-fix behavior rejected unsupported commands only at replay-forwarding time. The command had already executed locally through normal command processing, then `replicationFeedPrimaryWithRReplay` logged and returned.
+Pre-fix behavior: unsupported active/active writes could execute locally, then fail later in `replicationFeedPrimaryWithRReplay`. The client saw success while peers never received an equivalent replay frame.
 
-Relevant code:
-- `src/server.c:3675` calls `replicationFeedPrimaryWithRReplay` after normal propagation handling.
-- `src/replication.c:1693` to `src/replication.c:1720` rejects streams, functions, TTL mutations, flushes, transactions, arbitrary-key commands, and other unsupported commands.
-- `src/replication.c:2433` to `src/replication.c:2439` logs "Skipping upstream RREPLAY forwarding" and returns.
+Shortest repro:
+1. Enable `active-replica yes`, `multi-master yes`, `replica-read-only no` on two peers.
+2. Issue `XADD s * f v` or `EXPIRE k 10` to one peer.
+3. The local node mutates; the peer never receives a replay-safe operation.
 
-Impact before the fix: a user could issue a successful write in active/active mode and receive OK, while peers never received it. The old tests intentionally demonstrated this for `XADD` and `EXPIRE`.
+Fix:
+- `src/server.c` now checks `replicationCanForwardCommandWithRReplay(...)` before executing local active/active writes.
+- Regression tests assert rejected `XADD` and relative `EXPIRE` leave both peers unchanged.
 
-Fix: `processCommand` now rejects unsupported local writes before execution when `active-replica + multi-master` is enabled. Tests now assert that `XADD` and relative `EXPIRE` are rejected and do not mutate either node.
+### 2. RMW Commands Were Canonicalized After Mutation
 
-### Fixed P1: Canonicalized RMW Commands Converge But Lose Concurrent Update Semantics
+Pre-fix behavior: `INCR`, `APPEND`, `HINCRBY`, `ZINCRBY`, and similar commands executed locally, then were forwarded as absolute writes. This converges but loses update semantics.
 
-Pre-fix behavior treated read-modify-write commands as risky, executed them locally, then forwarded the resulting absolute value as a deterministic write. That gave convergence, not CRDT-style merge semantics.
-
-Relevant code:
-- `src/replication.c:1568` to `src/replication.c:1577` classifies `INCR`, `HINCRBY`, `ZINCRBY`, etc. as risky RMW commands.
-- `src/replication.c:1601` to `src/replication.c:1629` canonicalizes string RMW commands to `SET key current-value KEEPTTL`.
-
-Original simulator trace:
+Shortest model trace:
 1. A runs `INCR ctr`, canonicalized as `SET ctr 1`.
 2. B concurrently runs `INCR ctr`, canonicalized as `SET ctr 1`.
-3. Both nodes converge to `1`; a commutative counter expectation would be `2`.
+3. Both nodes converge to `1`; a counter merge would require `2`.
 
-Fix: local RMW commands are rejected before mutation in active/active mode. If counters are in scope later, they need a different per-command merge strategy or a type-level CRDT.
+Fix:
+- Local RMW commands are rejected before mutation in active/active mode.
+- Raw incoming `RREPLAY` frames containing RMW commands remain rejected.
+- The stale post-mutation canonicalization path was removed from forwarding.
 
-### P2: MVCC Clock Persistence Is Capped And Can Lose Stale-Write Protection
+### 3. Partial Collection Mutations And Multi-Key Operations Were Still Too Broad
 
-RDB persistence stores only the newest `mvcc-rdb-clock-max-entries` key clocks. When the cap is exceeded, older keys lose their MVCC clocks across restart.
+Bug found during follow-through: the support check still accepted any write command with key metadata unless explicitly blocked. That allowed unsafe operations such as `HSET`, `ZADD`, `SADD`, `LPUSH`, `RENAME`, and multi-key `DEL`.
 
-Relevant code:
-- `src/rdb.c:1550` to `src/rdb.c:1601` caps persisted MVCC key clocks and records dropped entries.
-- `tests/integration/replication-multimaster-rreplay.tcl` includes a test where dropped older clocks allow stale `MVCCRESTORE` payloads to win after restart.
+Shortest divergence shape:
+1. A runs a partial mutation on key `h`, for example `HSET h a 1`.
+2. B concurrently runs a different mutation on the same logical object, for example `HSET h b 2`, or a competing write to one key in a multi-key command.
+3. Key-level MVCC can reject the stale incoming delta on one side, but the already-applied local field/member remains on the other side. The datasets can quiesce with different object contents.
 
-Impact: this is a bounded-memory tradeoff, but it weakens stale replay/restore protection for keys omitted from the RDB AUX metadata.
+Fix:
+- `src/replication.c` now uses an explicit replay allowlist.
+- Current allowlist is `SET`, `MSET`, single-key `DEL`, and internal `MVCCRESTORE`.
+- Regression tests assert `HSET`, `ZADD`, `SADD`, `LPUSH`, `RENAME`, and multi-key `DEL` are rejected before mutation.
 
-Recommendation: treat this cap as a correctness knob, not merely telemetry. Upstream design should specify whether stale protection is best-effort, durable, or required.
+## Open Risks
 
-### P2: Upstream Readiness Is Low Despite Passing Lab Tests
+### MVCC Clock Persistence Cap
 
-The patch is large and invasive: 4,847 insertions across replication, RDB, command metadata, config, INFO/ROLE, and tests. It is also 187 commits behind upstream `unstable` as of this audit.
+`mvcc-rdb-clock-max-entries` caps persisted key clocks. Older keys beyond the cap can lose stale-write protection after restart. The existing test demonstrates that omitted older clocks can allow stale `MVCCRESTORE` data to win after reload. This is a design tradeoff only if the feature explicitly promises best-effort stale protection; otherwise it is a correctness risk.
 
-Recommendation: before PR, split into an RFC/design doc and reviewable stages: command gating/support matrix, RREPLAY wire protocol, MVCC metadata/persistence, topology management, and test/fault-injection harness.
+### AOF-Only Restart Semantics
 
-## Test Gaps To Close
+The audit focused on RDB AUX metadata. AOF-only and AOF rewrite behavior still need direct testing. If the dataset is replayed without the corresponding MVCC/dedupe metadata, stale replay protection can be weaker after restart.
 
-Recommended next tests before upstream consideration:
-- AOF enabled, AOF rewrite, and restart behavior for MVCC/replay metadata.
-- Explicit unsupported-command rejection behavior if the design changes.
-- Concurrent RMW semantics tests that encode expected behavior, not only convergence.
-- Jepsen-style process kill, link partition, disk persistence, and recovery scenarios.
-- Larger meshes and asymmetric partitions, especially with replay queue overflow and fullsync request loops.
-- ACL/security checks for internal commands and peer capabilities.
-- Rebase onto current upstream and rerun the full replication suite, not only the new focused files.
+### Replay ACK And Queue Semantics
+
+The replay queue has focused tests for drain and overflow/fullsync request behavior, but ACK handling is still delicate. The implementation advances `replay_last_acked_id` from peer integer replies and drains pending replay frames in FIFO order. A stronger design should specify behavior for duplicate ACKs, unexpected ACK ids, reconnect races, and fullsync requests while new writes arrive.
+
+### Dedupe Bound
+
+`RREPLAY_DEDUP_MAX_ENTRIES` is fixed at 10,000 entries. This bounds memory but means old duplicate frames can be accepted again after eviction. MVCC freshness usually protects values, but this should be documented as bounded idempotence, not permanent dedupe.
+
+### Upstream Readiness
+
+The patch remains large and invasive across replication, RDB, command metadata, config, tests, and INFO/ROLE output. Even after rebase, it needs a design document and a staged review plan before it is practical for upstream review.
+
+## Maintainer Notes
+
+The main issue is not whether a small active/active subset can be made to converge. The model and tests support that for a narrow set. The issue is command semantics: Valkey commands that mutate part of an object or multiple keys are not automatically safe under command-level key MVCC. They need one of:
+- rejection before mutation,
+- full-value canonical replay with clear LWW semantics,
+- command-specific merge logic,
+- or a CRDT/type-level design.
+
+The local fixes choose rejection. That makes the prototype more honest and easier to evaluate.
 
 ## Reproduce
 
 ```bash
-git clone https://github.com/bet0x/valkey.git .
-git checkout 9b2284900efa42e205e421ed6307019da5b15497
-git remote add upstream https://github.com/valkey-io/valkey.git
-git fetch upstream unstable
+git checkout audit/bet0x-active-active-fix-rebased
 make -j$(sysctl -n hw.ncpu)
-./runtest --single integration/replication-multimaster-rreplay --clients 1 --timeout 120
-cd audit/formal
-java -cp tla2tools.jar tlc2.TLC -deadlock -config MultiMaster-supported.cfg MultiMaster.tla
-cd ../..
+./runtest --single unit/rreplay
+./runtest --single integration/replication-multimaster-rreplay
+./runtest --single integration/replication-multimaster
+./runtest --single integration/replication-multimaster-upstreams
+./runtest --single integration/replication-multimaster-topologies
+java -jar audit/formal/tla2tools.jar -deadlock -config audit/formal/MultiMaster-supported.cfg audit/formal/MultiMaster.tla
+java -jar audit/formal/tla2tools.jar -deadlock -config audit/formal/MultiMaster-unsupported.cfg audit/formal/MultiMaster.tla
 audit/sim/mm_sim.py --runs 2000 --steps 80
 ```
