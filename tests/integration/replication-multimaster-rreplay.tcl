@@ -33,6 +33,11 @@ start_server {tags {"repl external:skip"}} {
             $node1 config set active-replica-debug-commands yes
         }
 
+        test {Active-active requires AOF RDB preamble metadata} {
+            assert_error {*requires aof-use-rdb-preamble yes*} {$node1 config set aof-use-rdb-preamble no}
+            assert_equal yes [lindex [$node1 config get aof-use-rdb-preamble] 1]
+        }
+
         test {RREPLAY LWW converges to latest write} {
             $node0 set mm:lww first
             after 25

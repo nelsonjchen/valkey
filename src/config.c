@@ -2525,8 +2525,28 @@ static int isValidMultiMasterConfig(int val, const char **err) {
         *err = "multi-master requires active-replica yes";
         return 0;
     }
+    if (val && !server.aof_use_rdb_preamble) {
+        *err = "multi-master requires aof-use-rdb-preamble yes to preserve active-active metadata in AOF";
+        return 0;
+    }
     if (!val && server.multi_master_no_forward) {
         *err = "multi-master cannot be disabled while multi-master-no-forward is enabled";
+        return 0;
+    }
+    return 1;
+}
+
+static int isValidAppendOnlyConfig(int val, const char **err) {
+    if (val && server.multi_master && !server.aof_use_rdb_preamble) {
+        *err = "appendonly with multi-master requires aof-use-rdb-preamble yes to preserve active-active metadata";
+        return 0;
+    }
+    return 1;
+}
+
+static int isValidAofUseRdbPreambleConfig(int val, const char **err) {
+    if (!val && server.multi_master) {
+        *err = "multi-master requires aof-use-rdb-preamble yes to preserve active-active metadata in AOF";
         return 0;
     }
     return 1;
@@ -3306,7 +3326,7 @@ standardConfig static_configs[] = {
     createBoolConfig("cluster-require-full-coverage", NULL, MODIFIABLE_CONFIG, server.cluster_require_full_coverage, 1, NULL, NULL),
     createBoolConfig("rdb-save-incremental-fsync", NULL, MODIFIABLE_CONFIG, server.rdb_save_incremental_fsync, 1, NULL, NULL),
     createBoolConfig("aof-load-truncated", NULL, MODIFIABLE_CONFIG, server.aof_load_truncated, 1, NULL, NULL),
-    createBoolConfig("aof-use-rdb-preamble", NULL, MODIFIABLE_CONFIG, server.aof_use_rdb_preamble, 1, NULL, NULL),
+    createBoolConfig("aof-use-rdb-preamble", NULL, MODIFIABLE_CONFIG, server.aof_use_rdb_preamble, 1, isValidAofUseRdbPreambleConfig, NULL),
     createBoolConfig("aof-timestamp-enabled", NULL, MODIFIABLE_CONFIG, server.aof_timestamp_enabled, 0, NULL, NULL),
     createBoolConfig("cluster-replica-no-failover", "cluster-slave-no-failover", MODIFIABLE_CONFIG, server.cluster_replica_no_failover, 0, NULL, updateClusterFlags), /* Failover by default. */
     createBoolConfig("replica-lazy-flush", "slave-lazy-flush", MODIFIABLE_CONFIG, server.repl_replica_lazy_flush, 1, NULL, NULL),
@@ -3321,7 +3341,7 @@ standardConfig static_configs[] = {
     createBoolConfig("activedefrag", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.active_defrag_enabled, CONFIG_ACTIVE_DEFRAG_DEFAULT, isValidActiveDefrag, NULL),
     createBoolConfig("syslog-enabled", NULL, IMMUTABLE_CONFIG, server.syslog_enabled, 0, NULL, NULL),
     createBoolConfig("cluster-enabled", NULL, IMMUTABLE_CONFIG, server.cluster_enabled, 0, NULL, NULL),
-    createBoolConfig("appendonly", NULL, MODIFIABLE_CONFIG | DENY_LOADING_CONFIG, server.aof_enabled, 0, NULL, updateAppendOnly),
+    createBoolConfig("appendonly", NULL, MODIFIABLE_CONFIG | DENY_LOADING_CONFIG, server.aof_enabled, 0, isValidAppendOnlyConfig, updateAppendOnly),
     createBoolConfig("cluster-allow-reads-when-down", NULL, MODIFIABLE_CONFIG, server.cluster_allow_reads_when_down, 0, NULL, NULL),
     createBoolConfig("cluster-allow-pubsubshard-when-down", NULL, MODIFIABLE_CONFIG, server.cluster_allow_pubsubshard_when_down, 1, NULL, NULL),
     createBoolConfig("crash-log-enabled", NULL, MODIFIABLE_CONFIG, server.crashlog_enabled, 1, NULL, updateSighandlerEnabled),
