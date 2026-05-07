@@ -832,12 +832,10 @@ dictType sdsHashDictType = {
 
 /* Dict for binary-safe sds keys with heap values freed via zfree(). */
 dictType sdsKeyHeapPointerValueDictType = {
-    dictSdsHash,       /* hash function */
-    NULL,              /* key dup */
-    dictSdsKeyCompare, /* key compare */
-    dictSdsDestructor, /* key destructor */
-    dictVanillaFree,   /* val destructor */
-    NULL               /* allow to expand */
+    .entryGetKey = dictEntryGetKey,
+    .hashFunction = dictSdsHash,
+    .keyCompare = dictSdsKeyCompare,
+    .entryDestructor = dictEntryDestructorSdsKeyHeapValue,
 };
 
 size_t clientHashtableTypeMetadataSize(void) {
@@ -4706,6 +4704,7 @@ int processCommand(client *c) {
         const char *rreplay_reason = NULL;
         if (!replicationCanForwardCommandWithRReplay(c->cmd, c->argv, c->argc, &rreplay_reason)) {
             rejectCommandFormat(c,
+                                1,
                                 "Command '%s' is not supported in active-replica multi-master mode: %s",
                                 c->cmd->fullname,
                                 rreplay_reason ? rreplay_reason : "cannot be represented as RREPLAY");
