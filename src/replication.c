@@ -1577,24 +1577,54 @@ static int rreplayCommandIsRiskyRmw(struct serverCommand *cmd) {
             cmd->proc == hincrbyfloatCommand || cmd->proc == zincrbyCommand);
 }
 
-static int rreplayCommandIsAllowlisted(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
-    UNUSED(argv);
-    if (cmd == NULL) return 0;
+typedef enum activeActiveCommandSemantics {
+    AA_CMD_SUPPORTED,
+    AA_CMD_CRDT_METADATA,
+    AA_CMD_SINGLE_WRITER_FUTURE,
+    AA_CMD_REJECTED
+} activeActiveCommandSemantics;
 
-    if (cmd->proc == setCommand || cmd->proc == msetCommand || cmd->proc == mvccrestoreCommand) return 1;
+static const char *activeActiveCommandSemanticsName(activeActiveCommandSemantics semantics) {
+    switch (semantics) {
+    case AA_CMD_SUPPORTED: return "supported";
+    case AA_CMD_CRDT_METADATA: return "supported with CRDT metadata";
+    case AA_CMD_SINGLE_WRITER_FUTURE: return "single-writer/future";
+    case AA_CMD_REJECTED: return "rejected";
+    }
+    return "rejected";
+}
+
+static activeActiveCommandSemantics activeActiveCommandSemanticsForCommand(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
+    UNUSED(argv);
+    if (cmd == NULL) return AA_CMD_REJECTED;
+
+    if (cmd->proc == setCommand || cmd->proc == msetCommand || cmd->proc == mvccrestoreCommand) return AA_CMD_SUPPORTED;
     if (cmd->proc == delCommand) {
-        if (argc == 2) return 1;
+        if (argc == 2) return AA_CMD_SUPPORTED;
         if (reason) *reason = "multi-key DEL is unsupported in replay";
-        return 0;
+        return AA_CMD_SINGLE_WRITER_FUTURE;
+    }
+
+    if (rreplayCommandIsRiskyRmw(cmd)) {
+        if (reason) *reason = "command needs CRDT metadata for preserve-intent active-active semantics";
+        return AA_CMD_CRDT_METADATA;
     }
 
     if (cmd->proc == hsetCommand || cmd->proc == zaddCommand) {
         if (reason) *reason = "partial collection mutations need full-value or CRDT semantics";
-        return 0;
+        return AA_CMD_CRDT_METADATA;
+    }
+
+    if (cmd->proc == evalCommand || cmd->proc == evalShaCommand || cmd->proc == fcallCommand ||
+        cmd->proc == fcallroCommand || cmd->proc == multiCommand || cmd->proc == execCommand ||
+        cmd->proc == discardCommand || cmd->proc == watchCommand || cmd->proc == unwatchCommand ||
+        cmd->proc == renameCommand || cmd->proc == renamenxCommand) {
+        if (reason) *reason = "command needs single-writer routing or a command-specific active-active design";
+        return AA_CMD_SINGLE_WRITER_FUTURE;
     }
 
     if (reason) *reason = "command is outside the active-active replay allowlist";
-    return 0;
+    return AA_CMD_REJECTED;
 }
 
 static int rreplayCommandIsSupported(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
@@ -1632,12 +1662,11 @@ static int rreplayCommandIsSupported(struct serverCommand *cmd, robj **argv, int
         return 0;
     }
 
-    if (rreplayCommandIsRiskyRmw(cmd)) {
-        if (reason) *reason = "command is temporarily blocked in replay (risky read-modify-write semantics)";
+    activeActiveCommandSemantics semantics = activeActiveCommandSemanticsForCommand(cmd, argv, argc, reason);
+    if (semantics != AA_CMD_SUPPORTED) {
+        if (reason && *reason == NULL) *reason = activeActiveCommandSemanticsName(semantics);
         return 0;
     }
-
-    if (!rreplayCommandIsAllowlisted(cmd, argv, argc, reason)) return 0;
 
     getKeysResult result;
     initGetKeysResult(&result);

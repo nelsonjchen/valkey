@@ -3316,6 +3316,7 @@ standardConfig static_configs[] = {
     createBoolConfig("active-replica", NULL, MODIFIABLE_CONFIG, server.active_replica, 0, isValidActiveReplicaConfig, NULL),
     createBoolConfig("multi-master", NULL, MODIFIABLE_CONFIG, server.multi_master, 0, isValidMultiMasterConfig, NULL),
     createBoolConfig("multi-master-no-forward", NULL, MODIFIABLE_CONFIG, server.multi_master_no_forward, 0, isValidMultiMasterNoForwardConfig, NULL),
+    createBoolConfig("active-replica-debug-commands", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.active_replica_debug_commands, 0, NULL, NULL),
     createBoolConfig("jemalloc-bg-thread", NULL, MODIFIABLE_CONFIG, server.jemalloc_bg_thread, 1, NULL, updateJemallocBgThread),
     createBoolConfig("activedefrag", NULL, DEBUG_CONFIG | MODIFIABLE_CONFIG, server.active_defrag_enabled, CONFIG_ACTIVE_DEFRAG_DEFAULT, isValidActiveDefrag, NULL),
     createBoolConfig("syslog-enabled", NULL, IMMUTABLE_CONFIG, server.syslog_enabled, 0, NULL, NULL),

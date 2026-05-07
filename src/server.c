@@ -2384,6 +2384,7 @@ void initServerConfig(void) {
     server.active_replica = 0;
     server.multi_master = 0;
     server.multi_master_no_forward = 0;
+    server.active_replica_debug_commands = 0;
     server.rreplay_seen = NULL;
     server.rreplay_seen_order = NULL;
     server.rreplay_seq = 0;
@@ -6711,6 +6712,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "active_replica:%d\r\n", server.active_replica,
                 "multi_master:%d\r\n", server.multi_master,
                 "multi_master_no_forward:%d\r\n", server.multi_master_no_forward,
+                "active_replica_debug_commands:%d\r\n", server.active_replica_debug_commands,
                 "master_global_link_status:%s\r\n", master_global_link_status,
                 "connected_masters:%d\r\n", connected_masters,
                 "configured_upstreams:%lu\r\n", server.upstreams ? listLength(server.upstreams) : 0,

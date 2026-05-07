@@ -23,6 +23,16 @@ start_server {tags {"repl external:skip"}} {
             }
         }
 
+        test {MVCCRESTORE is gated as an internal debug command} {
+            $node1 set mm:mvcc-gate base
+            set payload [$node1 dump mm:mvcc-gate]
+            assert_error {*MVCCRESTORE is internal*} {$node1 mvccrestore mm:mvcc-gate 0 $payload 100 replace}
+            assert_equal base [$node1 get mm:mvcc-gate]
+
+            $node0 config set active-replica-debug-commands yes
+            $node1 config set active-replica-debug-commands yes
+        }
+
         test {RREPLAY LWW converges to latest write} {
             $node0 set mm:lww first
             after 25
@@ -233,6 +243,7 @@ start_server {tags {"repl external:skip"}} {
             $node1 config set active-replica yes
             $node1 config set multi-master yes
             $node1 config set replica-read-only no
+            $node1 config set active-replica-debug-commands yes
 
             assert_equal 1 [s 0 configured_upstreams]
             wait_for_condition 400 100 {
@@ -318,6 +329,7 @@ start_server {tags {"repl external:skip"}} {
             } else {
                 fail "Primary restart after MVCC cap save did not finish loading"
             }
+            $node0 config set active-replica-debug-commands yes
 
             $node1 replicaof $node0_host $node0_port
             wait_for_condition 100 100 {

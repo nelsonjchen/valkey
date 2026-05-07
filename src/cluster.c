@@ -343,6 +343,10 @@ void restoreCommand(client *c) {
 /* MVCCRESTORE key ttl serialized-value mvcc-ts [REPLACE] [ABSTTL] [IDLETIME seconds] [FREQ frequency]
  * Restore variant that updates key-level MVCC clock used by active-active LWW replay. */
 void mvccrestoreCommand(client *c) {
+    if (!server.active_replica_debug_commands && !c->flag.fake && !c->flag.primary && !c->flag.replica) {
+        addReplyError(c, "MVCCRESTORE is internal to active-replica replication; enable active-replica-debug-commands for manual use");
+        return;
+    }
     restoreGenericCommand(c, 1);
 }
 /* MIGRATE socket cache implementation.

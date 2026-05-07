@@ -152,7 +152,7 @@ struct ValkeyModule;
 #define CONFIG_RUN_ID_SIZE 40
 #define RDB_EOF_MARK_SIZE 40
 #define CONFIG_REPL_BACKLOG_MIN_SIZE (1024 * 16) /* 16k */
-#define CONFIG_DEFAULT_MVCC_RDB_CLOCK_MAX_ENTRIES 200000
+#define CONFIG_DEFAULT_MVCC_RDB_CLOCK_MAX_ENTRIES 0
 #define CONFIG_DEFAULT_RREPLAY_PENDING_MAX_ENTRIES 50000
 #define CONFIG_BGSAVE_RETRY_DELAY 5              /* Wait a few secs before trying again. */
 #define CONFIG_DEFAULT_PID_FILE "/var/run/valkey.pid"
@@ -2211,6 +2211,7 @@ struct valkeyServer {
     int active_replica;   /* If enabled, this node may accept writes while being a replica. */
     int multi_master;     /* If enabled, allow multiple configured upstreams (scaffold). */
     int multi_master_no_forward; /* If enabled, avoid forwarding replay traffic (scaffold). */
+    int active_replica_debug_commands; /* If enabled, expose active/active internal debug commands to normal clients. */
     dict *rreplay_seen;   /* Recent replay frames for dedupe. Key: "<origin-uuid>:<replay-id>" */
     list *rreplay_seen_order; /* FIFO order for replay dedupe eviction. Values are sds keys in rreplay_seen. */
     unsigned long long rreplay_seq; /* Local replay sequence generator used for outbound RREPLAY. */
