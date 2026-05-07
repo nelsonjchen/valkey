@@ -2552,6 +2552,14 @@ static int isValidAofUseRdbPreambleConfig(int val, const char **err) {
     return 1;
 }
 
+static int isValidMVCCRdbClockMaxEntries(long long val, const char **err) {
+    if (val > 0 && server.multi_master && !server.active_replica_debug_commands) {
+        *err = "positive mvcc-rdb-clock-max-entries in multi-master mode requires active-replica-debug-commands yes";
+        return 0;
+    }
+    return 1;
+}
+
 static int isValidMultiMasterNoForwardConfig(int val, const char **err) {
     if (val && !server.multi_master) {
         *err = "multi-master-no-forward requires multi-master yes";
@@ -3504,7 +3512,7 @@ standardConfig static_configs[] = {
     createLongLongConfig("stream-node-max-entries", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.stream_node_max_entries, 100, INTEGER_CONFIG, NULL, NULL),
     createLongLongConfig("repl-backlog-size", NULL, MODIFIABLE_CONFIG, 1, LLONG_MAX, server.repl_backlog_size, 10 * 1024 * 1024, MEMORY_CONFIG, NULL, updateReplBacklogSize), /* Default: 10mb */
     createLongLongConfig("rreplay-pending-max-entries", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.rreplay_pending_max_entries, CONFIG_DEFAULT_RREPLAY_PENDING_MAX_ENTRIES, INTEGER_CONFIG, NULL, NULL),
-    createLongLongConfig("mvcc-rdb-clock-max-entries", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.mvcc_rdb_clock_max_entries, CONFIG_DEFAULT_MVCC_RDB_CLOCK_MAX_ENTRIES, INTEGER_CONFIG, NULL, NULL),
+    createLongLongConfig("mvcc-rdb-clock-max-entries", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.mvcc_rdb_clock_max_entries, CONFIG_DEFAULT_MVCC_RDB_CLOCK_MAX_ENTRIES, INTEGER_CONFIG, isValidMVCCRdbClockMaxEntries, NULL),
     createLongLongConfig("cluster-manual-failover-timeout", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.cluster_mf_timeout, 5000, INTEGER_CONFIG, NULL, NULL),
 
     /* Unsigned Long Long configs */

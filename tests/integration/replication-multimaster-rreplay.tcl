@@ -235,8 +235,12 @@ start_server {tags {"repl external:skip"}} {
             set replay_ack_before [s 0 upstream_runtime_replay_ack_frames]
             $node1 set mm:mvcc-persist stale
             set mvcc_payload [$node1 dump mm:mvcc-persist]
+            set node1_dbid 0
+            regexp {db=([0-9]+)} [$node1 client info] _ node1_dbid
             after 1
             $node1 set mm:mvcc-persist seed
+            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 1 replace
+            assert_equal "seed" [$node1 get mm:mvcc-persist]
             $node1 save
             restart_server 0 true false
 
@@ -250,6 +254,9 @@ start_server {tags {"repl external:skip"}} {
             $node1 config set multi-master yes
             $node1 config set replica-read-only no
             $node1 config set active-replica-debug-commands yes
+            $node1 select $node1_dbid
+            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 1 replace
+            assert_equal "seed" [$node1 get mm:mvcc-persist]
 
             assert_equal 1 [s 0 configured_upstreams]
             wait_for_condition 400 100 {
@@ -289,8 +296,6 @@ start_server {tags {"repl external:skip"}} {
 
             assert {[s 0 upstream_runtime_replay_tx_frames] >= $replay_tx_before}
             assert {[s 0 upstream_runtime_replay_ack_frames] >= $replay_ack_before}
-            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 1 replace
-            assert_equal "seed" [$node1 get mm:mvcc-persist]
         }
 
         test {RDB MVCC cap persists newest key clocks first} {

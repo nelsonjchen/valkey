@@ -4,6 +4,7 @@ tags {"repl aof external:skip"} {
             set node [srv 0 client]
 
             waitForBgrewriteaof $node
+            assert_error {*requires active-replica-debug-commands yes*} {$node config set mvcc-rdb-clock-max-entries 1}
             $node config set active-replica-debug-commands yes
 
             $node set mm:aof-mvcc stale
