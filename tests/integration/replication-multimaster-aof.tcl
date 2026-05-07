@@ -21,6 +21,12 @@ tags {"repl aof external:skip"} {
             $node set mm:aof-tail fresh-tail
             assert_equal fresh-tail [$node get mm:aof-tail]
 
+            $node set mm:aof-del doomed
+            set deleted_payload [$node dump mm:aof-del]
+            after 1
+            $node del mm:aof-del
+            assert_equal {} [$node get mm:aof-del]
+
             restart_server 0 true false
             set node [srv 0 client]
             wait_for_condition 100 100 {
@@ -36,6 +42,9 @@ tags {"repl aof external:skip"} {
             assert_equal fresh-tail [$node get mm:aof-tail]
             $node mvccrestore mm:aof-tail 0 $stale_tail_payload 1 replace
             assert_equal fresh-tail [$node get mm:aof-tail]
+            assert_equal {} [$node get mm:aof-del]
+            $node mvccrestore mm:aof-del 0 $deleted_payload 1 replace
+            assert_equal {} [$node get mm:aof-del]
         }
     }
 }
