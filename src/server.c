@@ -4716,6 +4716,14 @@ int processCommand(client *c) {
                                 rreplay_reason ? rreplay_reason : "cannot be represented as RREPLAY");
             return C_OK;
         }
+        if (!replicationCanAcceptActiveActiveReplayFanout(&rreplay_reason)) {
+            rejectCommandFormat(c,
+                                1,
+                                "Command '%s' is not safe in active-replica multi-master mode right now: %s",
+                                c->cmd->fullname,
+                                rreplay_reason ? rreplay_reason : "replay fanout is not available");
+            return C_OK;
+        }
     }
 
     /* If the server is paused, block the client until the pause has ended. Replicas and slot

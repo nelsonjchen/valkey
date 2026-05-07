@@ -251,7 +251,21 @@ static void upstreamRuntimeMarkPendingReplayFramesForResend(valkeyUpstreamRuntim
     }
 }
 
-static void upstreamRuntimeConsumeAckedPendingReplay(valkeyUpstreamRuntime *runtime) {
+typedef enum rreplayAckResult {
+    RREPLAY_ACK_APPLIED = 1,
+    RREPLAY_ACK_STALE = 0,
+    RREPLAY_ACK_IMPOSSIBLE = -1,
+    RREPLAY_ACK_OUT_OF_ORDER = -2,
+} rreplayAckResult;
+
+static rreplayPendingFrame *upstreamRuntimeFirstPendingReplay(valkeyUpstreamRuntime *runtime) {
+    if (runtime == NULL || runtime->replay_pending_frames == NULL) return NULL;
+    listNode *ln = listFirst(runtime->replay_pending_frames);
+    if (ln == NULL) return NULL;
+    return listNodeValue(ln);
+}
+
+static void upstreamRuntimeConsumeFirstPendingReplay(valkeyUpstreamRuntime *runtime) {
     if (runtime == NULL || runtime->replay_pending_frames == NULL) return;
     listNode *ln = listFirst(runtime->replay_pending_frames);
     if (ln == NULL) return;
@@ -360,12 +374,39 @@ static void upstreamRuntimeTrackReplayReceived(valkeyUpstreamRuntime *runtime, u
     runtime->reploff = (long long)runtime->replay_last_acked_id;
 }
 
-static void upstreamRuntimeTrackReplayAck(valkeyUpstreamRuntime *runtime, unsigned long long replay_id) {
-    if (runtime == NULL || replay_id == 0) return;
+static rreplayAckResult upstreamRuntimeTrackReplayAck(valkeyUpstreamRuntime *runtime, unsigned long long replay_id) {
+    if (runtime == NULL || replay_id == 0) return RREPLAY_ACK_IMPOSSIBLE;
     runtime->replay_ack_frames++;
-    if (replay_id > runtime->replay_last_acked_id) runtime->replay_last_acked_id = replay_id;
+
+    if (replay_id <= runtime->replay_last_acked_id) {
+        return RREPLAY_ACK_STALE;
+    }
+    if (replay_id > runtime->replay_last_sent_id) {
+        serverLog(LL_WARNING,
+                  "Ignoring impossible RREPLAY ACK %llu from upstream %s:%d; last sent is %llu",
+                  replay_id, runtime->host ? runtime->host : "?", runtime->port, runtime->replay_last_sent_id);
+        return RREPLAY_ACK_IMPOSSIBLE;
+    }
+    if (upstreamRuntimeSupportsReplayQueue(runtime)) {
+        rreplayPendingFrame *pending = upstreamRuntimeFirstPendingReplay(runtime);
+        if (pending == NULL) {
+            serverLog(LL_WARNING,
+                      "Ignoring out-of-order RREPLAY ACK %llu from upstream %s:%d; no pending replay frames",
+                      replay_id, runtime->host ? runtime->host : "?", runtime->port);
+            return RREPLAY_ACK_OUT_OF_ORDER;
+        }
+        if (pending->replay_id != replay_id) {
+            serverLog(LL_WARNING,
+                      "Ignoring out-of-order RREPLAY ACK %llu from upstream %s:%d; next pending replay is %llu",
+                      replay_id, runtime->host ? runtime->host : "?", runtime->port, pending->replay_id);
+            return RREPLAY_ACK_OUT_OF_ORDER;
+        }
+    }
+
+    runtime->replay_last_acked_id = replay_id;
     runtime->reploff = (long long)runtime->replay_last_acked_id;
-    upstreamRuntimeConsumeAckedPendingReplay(runtime);
+    if (upstreamRuntimeSupportsReplayQueue(runtime)) upstreamRuntimeConsumeFirstPendingReplay(runtime);
+    return RREPLAY_ACK_APPLIED;
 }
 
 static void disconnectUpstreamForwardingLink(valkeyUpstreamRuntime *runtime, int async_free) {
@@ -592,37 +633,14 @@ static void queueUpstreamForwardHandshake(client *c) {
     }
 }
 
-static const char *upstreamForwardAdvertisedHost(void) {
-    if (server.replica_announce_ip && server.replica_announce_ip[0] != '\0') return server.replica_announce_ip;
-    if (server.bindaddr_count > 0 && server.bindaddr[0] && server.bindaddr[0][0] != '\0') return server.bindaddr[0];
-    return "127.0.0.1";
-}
-
-static int upstreamForwardAdvertisedPort(void) {
-    if (server.replica_announce_port > 0) return server.replica_announce_port;
-    if (server.tls_replication && server.tls_port > 0) return server.tls_port;
-    return server.port;
-}
-
 static void upstreamRuntimeRequestPeerFullResync(valkeyUpstreamRuntime *runtime) {
     if (runtime == NULL || runtime->link_client == NULL) return;
     if (!runtime->replay_fullsync_required) return;
 
-    const char *host = upstreamForwardAdvertisedHost();
-    int port = upstreamForwardAdvertisedPort();
-    char portbuf[32];
-    ll2string(portbuf, sizeof(portbuf), port);
-
-    const char *argv[] = {"REPLICAOF", host, portbuf};
-    size_t argv_lens[] = {9, strlen(host), strlen(portbuf)};
-    queueUpstreamForwardCommand(runtime->link_client, 3, argv, argv_lens);
-
-    runtime->replay_fullsync_requests++;
-    runtime->replay_fullsync_required = 0;
-    if (runtime->replay_pending_frames) listEmpty(runtime->replay_pending_frames);
     serverLog(LL_WARNING,
-              "Requested peer full sync for upstream %s:%d after replay queue overflow (target primary %s:%d)",
-              runtime->host ? runtime->host : "?", runtime->port, host, port);
+              "Replay queue overflow for upstream %s:%d requires manual repair; "
+              "ordinary full sync is not used because it can overwrite concurrent active-active writes",
+              runtime->host ? runtime->host : "?", runtime->port);
 }
 
 static int processUpstreamForwardReplyBuffer(valkeyUpstreamRuntime *runtime) {
@@ -1692,6 +1710,86 @@ int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **ar
     if (reason) *reason = NULL;
 
     return rreplayCommandIsSupported(cmd, argv, argc, reason);
+}
+
+int replicationCanLoadAofCommandInActiveActive(struct serverCommand *cmd, robj **argv, int argc, const char **reason) {
+    if (reason) *reason = NULL;
+    if (!server.active_replica || !server.multi_master) return 1;
+    if (cmd == NULL) {
+        if (reason) *reason = "unknown command";
+        return 0;
+    }
+    if (cmd->proc == multiCommand || cmd->proc == execCommand) {
+        if (reason) *reason = "transactions are unsupported in active-replica multi-master AOF";
+        return 0;
+    }
+    if (!(cmd->flags & CMD_WRITE)) return 1;
+
+    if (cmd->proc == setCommand && rreplaySetUsesUnsupportedTtlOptions(argv, argc)) {
+        if (reason) *reason = "SET with relative TTL options is unsupported in active-active AOF";
+        return 0;
+    }
+
+    activeActiveCommandSemantics semantics = activeActiveCommandSemanticsForCommand(cmd, argv, argc, reason);
+    if (semantics != AA_CMD_SUPPORTED) {
+        if (reason && *reason == NULL) *reason = activeActiveCommandSemanticsName(semantics);
+        return 0;
+    }
+    return 1;
+}
+
+int replicationCanAcceptActiveActiveReplayFanout(const char **reason) {
+    if (reason) *reason = NULL;
+    if (!server.active_replica || !server.multi_master) return 1;
+    if (server.rreplay_pending_max_entries <= 0) return 1;
+    if (server.upstream_runtime == NULL) return 1;
+
+    unsigned long long max_entries = (unsigned long long)server.rreplay_pending_max_entries;
+    listIter li;
+    listNode *ln;
+    listRewind(server.upstream_runtime, &li);
+    while ((ln = listNext(&li)) != NULL) {
+        valkeyUpstreamRuntime *runtime = listNodeValue(ln);
+        if (!upstreamRuntimeSupportsReplayQueue(runtime)) continue;
+        if (runtime->replay_fullsync_required) {
+            if (reason) *reason = "replay queue repair is required for an upstream peer";
+            return 0;
+        }
+        if (runtime->replay_pending_frames &&
+            (unsigned long long)listLength(runtime->replay_pending_frames) >= max_entries) {
+            if (reason) *reason = "replay queue is at its configured cap";
+            return 0;
+        }
+    }
+    return 1;
+}
+
+void rreplayackCommand(client *c) {
+    if (!server.active_replica_debug_commands) {
+        addReplyError(c, "RREPLAYACK is internal to active-replica debug use; enable active-replica-debug-commands");
+        return;
+    }
+
+    long long port = 0, replay_id_ll = 0;
+    if (getLongLongFromObjectOrReply(c, c->argv[2], &port, NULL) != C_OK) return;
+    if (getLongLongFromObjectOrReply(c, c->argv[3], &replay_id_ll, NULL) != C_OK) return;
+    if (port <= 0 || port > 65535 || replay_id_ll <= 0) {
+        addReplyError(c, "invalid host, port, or replay id");
+        return;
+    }
+
+    valkeyUpstreamRuntime *runtime = NULL;
+    if (sdsEncodedObject(c->argv[1])) {
+        listNode *ln = findUpstreamRuntimeNode(objectGetVal(c->argv[1]), (int)port);
+        if (ln) runtime = listNodeValue(ln);
+    }
+    if (runtime == NULL) {
+        addReplyError(c, "upstream runtime not found");
+        return;
+    }
+
+    rreplayAckResult result = upstreamRuntimeTrackReplayAck(runtime, (unsigned long long)replay_id_ll);
+    addReplyLongLong(c, result);
 }
 
 void replicationMVCCStampAofLoadedCommand(int dbid, struct serverCommand *cmd, robj **argv, int argc) {

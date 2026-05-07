@@ -1,4 +1,30 @@
+source tests/support/aofmanifest.tcl
+
 tags {"repl aof external:skip"} {
+    test {Active-active AOF load rejects old unsupported write tails before mutation} {
+        set server_path [tmpdir server.active-active-aof-reject]
+        set aof_basename "appendonly.aof"
+        set aof_dirpath "$server_path/appendonlydir"
+        set aof_file "$aof_dirpath/${aof_basename}.1.incr.aof"
+        set aof_manifest_file "$aof_dirpath/${aof_basename}$::manifest_suffix"
+
+        create_aof $aof_dirpath $aof_file {
+            append_to_aof [formatCommand hset mm:old field value]
+        }
+        create_aof_manifest $aof_dirpath $aof_manifest_file {
+            append_to_manifest "file appendonly.aof.1.incr.aof seq 1 type i\n"
+        }
+
+        start_server [list overrides [list dir $server_path appendonly yes appendfilename $aof_basename appenddirname appendonlydir auto-aof-rewrite-percentage 0 active-replica yes multi-master yes replica-read-only no] keep_persistence true wait_ready false] {
+            wait_for_condition 100 50 {
+                ![is_alive [srv pid]]
+            } else {
+                fail "active-active server loaded unsupported AOF write instead of failing closed"
+            }
+            wait_for_log_messages 0 {"*active-active command hset is unsupported*"} 0 20 100
+        }
+    }
+
     test {Active-active AOF RDB preamble restart preserves MVCC clocks} {
         start_server {overrides {appendonly yes aof-use-rdb-preamble yes save "" active-replica yes multi-master yes replica-read-only no}} {
             set node [srv 0 client]

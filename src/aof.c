@@ -1683,6 +1683,22 @@ int loadSingleAppendOnlyFile(char *filename) {
 
         if (cmd->proc == multiCommand) valid_before_multi = valid_up_to;
 
+        const char *active_active_aof_reason = NULL;
+        if ((fakeClient->flag.multi || cmd->proc == multiCommand || cmd->proc == execCommand) &&
+            server.active_replica && server.multi_master) {
+            active_active_aof_reason = "transactions are unsupported in active-replica multi-master AOF";
+        } else if (!replicationCanLoadAofCommandInActiveActive(cmd, argv, argc, &active_active_aof_reason)) {
+            if (active_active_aof_reason == NULL) active_active_aof_reason = "cannot be represented as RREPLAY";
+        }
+        if (active_active_aof_reason != NULL) {
+            serverLog(LL_WARNING,
+                      "Error reading the append only file %s, active-active command %s is unsupported: %s",
+                      filename, cmd->fullname, active_active_aof_reason);
+            freeClientArgv(fakeClient);
+            ret = AOF_FAILED;
+            goto cleanup;
+        }
+
         /* Run the command in the context of a fake client */
         long long dirty_before = server.dirty;
         if (fakeClient->flag.multi && fakeClient->cmd->proc != execCommand) {

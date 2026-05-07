@@ -1647,8 +1647,8 @@ typedef struct valkeyUpstreamRuntime {
     unsigned long long replay_rx_frames;     /* Total replay frames received from this peer. */
     unsigned long long replay_ack_frames;    /* Total replay ACK replies received from this peer. */
     unsigned long long replay_pending_dropped; /* Total pending replay frames dropped by queue cap. */
-    unsigned long long replay_fullsync_requests; /* Total peer full-sync requests sent after queue overflow. */
-    int replay_fullsync_required; /* 1 when queue overflow requires peer full-sync before incremental replay. */
+    unsigned long long replay_fullsync_requests; /* Reserved; ordinary full-sync repair is disabled for active-active safety. */
+    int replay_fullsync_required; /* 1 when queue overflow requires manual repair before incremental replay. */
     list *replay_pending_frames; /* Pending outbound replay frames awaiting ACK on peer-forward links. */
 } valkeyUpstreamRuntime;
 
@@ -3269,6 +3269,8 @@ int prepareReplicasToWrite(void);
 void replicationFeedReplicas(int dictid, robj **argv, int argc);
 void replicationFeedPrimaryWithRReplay(int dictid, robj **argv, int argc);
 int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **argv, int argc, const char **reason);
+int replicationCanLoadAofCommandInActiveActive(struct serverCommand *cmd, robj **argv, int argc, const char **reason);
+int replicationCanAcceptActiveActiveReplayFanout(const char **reason);
 void replicationMVCCStampAofLoadedCommand(int dbid, struct serverCommand *cmd, robj **argv, int argc);
 void replicationFeedStreamFromPrimaryStream(char *buf, size_t buflen);
 void replicationDetachUpstreamRuntimeClient(client *c);
@@ -4271,6 +4273,7 @@ void bitopCommand(client *c);
 void bitcountCommand(client *c);
 void bitposCommand(client *c);
 void replconfCommand(client *c);
+void rreplayackCommand(client *c);
 void rreplayCommand(client *c);
 void waitCommand(client *c);
 void waitaofCommand(client *c);

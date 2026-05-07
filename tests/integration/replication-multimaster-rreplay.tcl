@@ -140,6 +140,29 @@ start_server {tags {"repl external:skip"}} {
             assert_equal {} [$node0 get mm:rmw:raw]
         }
 
+        test {RREPLAY dedupe eviction still relies on MVCC freshness} {
+            assert_equal OK [$node0 replconf capa rreplay-peer]
+            assert_equal OK [$node0 replconf uuid 3333333333333333333333333333333333333333]
+            set client_info [$node0 client info]
+            set dbid 0
+            regexp {db=([0-9]+)} $client_info _ dbid
+            set origin 3333333333333333333333333333333333333333
+
+            assert_equal 1 [$node0 rreplay $origin $dbid 1 100 set mm:dedupe-evict stale]
+            assert_equal stale [$node0 get mm:dedupe-evict]
+            after 1
+            $node0 set mm:dedupe-evict fresh
+            assert_equal fresh [$node0 get mm:dedupe-evict]
+
+            for {set i 2} {$i <= 10050} {incr i} {
+                $node0 rreplay $origin $dbid $i 100 set mm:dedupe-evict stale
+            }
+            assert {[s -1 rreplay_dedupe_entries] <= 10000}
+
+            assert_equal 1 [$node0 rreplay $origin $dbid 1 100 set mm:dedupe-evict stale]
+            assert_equal fresh [$node0 get mm:dedupe-evict]
+        }
+
         test {MVCCRESTORE enforces stale protection} {
             $node1 set mm:mvcc base
             set payload [$node1 dump mm:mvcc]

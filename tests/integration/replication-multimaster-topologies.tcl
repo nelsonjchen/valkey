@@ -239,7 +239,7 @@ start_server {overrides {save {}}} {
         }
     }
 
-    test {3-node peer full sync after pending queue overflow} {
+    test {3-node replay queue cap rejects new writes before overflow} {
         foreach n [list $nodeA $nodeB $nodeC] {
             reset_mm_node $n
         }
@@ -253,7 +253,7 @@ start_server {overrides {save {}}} {
             [s -2 configured_upstreams] == 2 &&
             [s -2 active_upstream_runtime_links] == 2
         } else {
-            fail "nodeA did not establish deterministic dual-upstream runtime before overflow test"
+            fail "nodeA did not establish deterministic dual-upstream runtime before queue-cap test"
         }
 
         $nodeA config set rreplay-pending-max-entries 5
@@ -264,15 +264,20 @@ start_server {overrides {save {}}} {
             fail "nodeC did not stop before overflow writes"
         }
 
-        for {set i 1} {$i <= 40} {incr i} {
+        for {set i 1} {$i <= 5} {incr i} {
             $nodeA set "mm:overflow:$i" "v$i"
         }
 
         wait_for_condition 200 50 {
-            [s -2 upstream_runtime_replay_pending_dropped] > 0
+            [s -2 upstream_runtime_replay_pending_frames] == 5
         } else {
-            fail "nodeA did not drop pending replay frames under queue cap"
+            fail "nodeA did not fill pending replay queue under queue cap"
         }
+
+        assert_error {*replay queue is at its configured cap*} {$nodeA set mm:overflow:6 v6}
+        assert_equal {} [$nodeA get mm:overflow:6]
+        assert_equal 0 [s -2 upstream_runtime_replay_pending_dropped]
+        assert_equal 0 [s -2 upstream_runtime_replay_fullsync_requests]
 
         restart_server 0 true false
         set nodeC [srv 0 client]
@@ -283,23 +288,30 @@ start_server {overrides {save {}}} {
         $nodeC config set replica-read-only no
 
         wait_for_condition 400 100 {
-            [s -2 upstream_runtime_replay_fullsync_requests] > 0
+            [s -2 active_upstream_runtime_links] == 2
         } else {
-            fail "nodeA did not request peer full sync after overflow"
-        }
-
-        wait_for_condition 400 100 {
-            [s 0 master_host] eq $nodeA_host &&
-            [s 0 master_link_status] eq {up}
-        } else {
-            fail "nodeC did not switch to nodeA after full sync request"
+            fail "nodeA did not reconnect queued peer after queue-cap rejection"
         }
 
         wait_for_condition 400 100 {
             [$nodeC get mm:overflow:1] eq {v1} &&
-            [$nodeC get mm:overflow:40] eq {v40}
+            [$nodeC get mm:overflow:5] eq {v5} &&
+            [$nodeC get mm:overflow:6] eq {}
         } else {
-            fail "nodeC did not recover full dataset after overflow-triggered full sync"
+            fail "nodeC did not receive queued dataset after queue-cap reconnect"
+        }
+
+        wait_for_condition 400 100 {
+            [s -2 upstream_runtime_replay_pending_frames] == 0
+        } else {
+            fail "nodeA pending replay queue did not drain after queue-cap reconnect"
+        }
+
+        $nodeA set mm:overflow:post post-reconnect
+        wait_for_condition 200 50 {
+            [$nodeC get mm:overflow:post] eq {post-reconnect}
+        } else {
+            fail "nodeA did not resume writes after pending queue drained"
         }
     }
 

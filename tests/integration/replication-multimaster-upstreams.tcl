@@ -64,6 +64,28 @@ start_server {overrides {save {}}} {
         }
     }
 
+    test {Replay ACK handling ignores stale and impossible ACK ids} {
+        wait_for_condition 100 100 {
+            [s -2 upstream_runtime_replay_ack_frames] >= 1
+        } else {
+            fail "replica did not observe replay ACK before ACK hardening test"
+        }
+
+        set p2_runtime [s -2 master_1]
+        regexp {replay_last_sent=([0-9]+)} $p2_runtime _ last_sent
+        regexp {replay_last_acked=([0-9]+)} $p2_runtime _ last_acked
+        assert {$last_sent >= $last_acked}
+        assert {$last_acked >= 1}
+
+        $replica config set active-replica-debug-commands yes
+        assert_equal 0 [$replica rreplayack $p2_host $p2_port $last_acked]
+        assert_equal -1 [$replica rreplayack $p2_host $p2_port [expr {$last_sent + 1000}]]
+
+        set p2_runtime_after [s -2 master_1]
+        regexp {replay_last_acked=([0-9]+)} $p2_runtime_after _ last_acked_after
+        assert_equal $last_acked $last_acked_after
+    }
+
     test {REPLICAOF REMOVE current upstream switches to next configured upstream} {
         $replica replicaof remove $p1_host $p1_port
         wait_for_condition 200 100 {

@@ -1,0 +1,36 @@
+{
+    "RREPLAYACK": {
+        "summary": "Debug command used to inject active-active replay ACK handling.",
+        "complexity": "O(1).",
+        "group": "server",
+        "since": "255.255.255",
+        "arity": 4,
+        "function": "rreplayackCommand",
+        "doc_flags": ["SYSCMD"],
+        "command_flags": [
+            "ADMIN",
+            "NOSCRIPT",
+            "LOADING",
+            "STALE",
+            "ALLOW_BUSY"
+        ],
+        "acl_categories": ["ADMIN", "DANGEROUS", "SLOW"],
+        "arguments": [
+            {
+                "name": "host",
+                "type": "string"
+            },
+            {
+                "name": "port",
+                "type": "integer"
+            },
+            {
+                "name": "replay-id",
+                "type": "integer"
+            }
+        ],
+        "reply_schema": {
+            "type": "integer"
+        }
+    }
+}
