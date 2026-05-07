@@ -112,10 +112,7 @@ class Sim:
         self.history.append(f"{src}: INCR {key} -> canonical SET {new_value} ts={meta.ts}/{meta.rid}")
 
     def unsupported_local(self, src: str, key: Key, value: Value, op: str = "XADD") -> None:
-        n = self.nodes[src]
-        meta = self.stamp(n)
-        self.apply_abs(n, key, value, meta)
-        self.history.append(f"{src}: unsupported {op} {key}={value} applied locally without RREPLAY")
+        self.history.append(f"{src}: unsupported {op} {key}={value} rejected before local mutation")
 
     def deliver_one(self, index: int | None = None) -> None:
         if not self.net:
@@ -188,7 +185,7 @@ def unsupported_counterexample() -> dict:
     sim.unsupported_local("A", "stream", "entry-1")
     sim.drain()
     return {
-        "name": "unsupported command remains local-only",
+        "name": "unsupported command is rejected before local mutation",
         "values": sim.values_by_node("stream"),
         "converged": sim.converged(),
         "history": sim.history,

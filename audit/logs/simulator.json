@@ -22,13 +22,13 @@
     }
   },
   {
-    "converged": false,
+    "converged": true,
     "history": [
-      "A: unsupported XADD stream=entry-1 applied locally without RREPLAY"
+      "A: unsupported XADD stream=entry-1 rejected before local mutation"
     ],
-    "name": "unsupported command remains local-only",
+    "name": "unsupported command is rejected before local mutation",
     "values": {
-      "A": "entry-1",
+      "A": null,
       "B": null
     }
   }
