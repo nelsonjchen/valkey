@@ -27,6 +27,14 @@ tags {"repl aof external:skip"} {
             $node del mm:aof-del
             assert_equal {} [$node get mm:aof-del]
 
+            $node mset mm:aof-mset:a old-a mm:aof-mset:b old-b
+            set stale_mset_a_payload [$node dump mm:aof-mset:a]
+            set stale_mset_b_payload [$node dump mm:aof-mset:b]
+            after 1
+            $node mset mm:aof-mset:a new-a mm:aof-mset:b new-b
+            assert_equal new-a [$node get mm:aof-mset:a]
+            assert_equal new-b [$node get mm:aof-mset:b]
+
             restart_server 0 true false
             set node [srv 0 client]
             wait_for_condition 100 100 {
@@ -45,6 +53,12 @@ tags {"repl aof external:skip"} {
             assert_equal {} [$node get mm:aof-del]
             $node mvccrestore mm:aof-del 0 $deleted_payload 1 replace
             assert_equal {} [$node get mm:aof-del]
+            assert_equal new-a [$node get mm:aof-mset:a]
+            assert_equal new-b [$node get mm:aof-mset:b]
+            $node mvccrestore mm:aof-mset:a 0 $stale_mset_a_payload 1 replace
+            $node mvccrestore mm:aof-mset:b 0 $stale_mset_b_payload 1 replace
+            assert_equal new-a [$node get mm:aof-mset:a]
+            assert_equal new-b [$node get mm:aof-mset:b]
         }
     }
 }
