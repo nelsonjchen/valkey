@@ -13,7 +13,7 @@ State observed:
 
 Verdict: the branch is a promising experimental active/active prototype for a narrow command subset. It builds and its focused tests pass, and a small TLA+ model supports convergence for modeled supported writes. It is not production-ready or upstream-ready without a design document, stronger command gating, clearer semantics for RMW commands, and more persistence/restart coverage.
 
-Fix update: commit `2499712a2` adds pre-execution rejection for local active/active writes that cannot be represented as RREPLAY. The TLA+ model and simulator now reflect that fix by modeling unsupported write attempts as rejected no-ops.
+Fix update: commit `2499712a2` adds pre-execution rejection for local active/active writes that cannot be represented as RREPLAY. The follow-up RMW fix also rejects lossy read-modify-write commands before local mutation. The TLA+ model and simulator now reflect both fixes by modeling unsupported/RMW attempts as rejected no-ops.
 
 ## Build And Tests
 
@@ -72,8 +72,7 @@ TLC:
 
 Simulator:
 - 2,000 randomized supported-command runs, 80 steps each: no convergence failures after draining the network.
-- Counterexample 1: concurrent canonicalized `INCR` converges to `1` on both nodes, while a user expecting commutative counter semantics would expect `2`.
-- Unsupported `XADD`/stream-like local write attempt is rejected before local mutation in the fixed model.
+- Concurrent `INCR` and unsupported `XADD`/stream-like local write attempts are rejected before local mutation in the fixed model.
 
 ## Findings
 
@@ -90,20 +89,20 @@ Impact before the fix: a user could issue a successful write in active/active mo
 
 Fix: `processCommand` now rejects unsupported local writes before execution when `active-replica + multi-master` is enabled. Tests now assert that `XADD` and relative `EXPIRE` are rejected and do not mutate either node.
 
-### P1: Canonicalized RMW Commands Converge But Lose Concurrent Update Semantics
+### Fixed P1: Canonicalized RMW Commands Converge But Lose Concurrent Update Semantics
 
-The implementation treats read-modify-write commands as risky, executes them locally, then forwards the resulting absolute value as a deterministic write. That gives convergence, not CRDT-style merge semantics.
+Pre-fix behavior treated read-modify-write commands as risky, executed them locally, then forwarded the resulting absolute value as a deterministic write. That gave convergence, not CRDT-style merge semantics.
 
 Relevant code:
 - `src/replication.c:1568` to `src/replication.c:1577` classifies `INCR`, `HINCRBY`, `ZINCRBY`, etc. as risky RMW commands.
 - `src/replication.c:1601` to `src/replication.c:1629` canonicalizes string RMW commands to `SET key current-value KEEPTTL`.
 
-Simulator trace:
+Original simulator trace:
 1. A runs `INCR ctr`, canonicalized as `SET ctr 1`.
 2. B concurrently runs `INCR ctr`, canonicalized as `SET ctr 1`.
 3. Both nodes converge to `1`; a commutative counter expectation would be `2`.
 
-Recommendation: document RMW semantics as LWW absolute-state semantics, not counters. If counters are in scope, they need a different per-command merge strategy or a type-level CRDT.
+Fix: local RMW commands are rejected before mutation in active/active mode. If counters are in scope later, they need a different per-command merge strategy or a type-level CRDT.
 
 ### P2: MVCC Clock Persistence Is Capped And Can Lose Stale-Write Protection
 

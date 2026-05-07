@@ -5,7 +5,7 @@ The simulator mirrors the branch's command-level RREPLAY/MVCC shape:
 - local writes are applied immediately and forwarded as replay frames;
 - incoming frames use per-key LWW with deterministic tie-breaks;
 - seen replay ids make duplicate delivery idempotent;
-- selected RMW operations are canonicalized to absolute writes.
+- unsupported and lossy RMW operations are rejected before local mutation.
 
 It is deliberately not a Redis emulator. Its job is to search protocol-level
 traces and expose where convergence differs from stronger user expectations.
@@ -101,15 +101,7 @@ class Sim:
         self.history.append(f"{src}: MSET {items} ts={meta.ts}/{meta.rid}")
 
     def local_incr(self, src: str, key: Key, amount: int = 1) -> None:
-        n = self.nodes[src]
-        new_value = int(n.data.get(key, 0)) + amount
-        meta = self.stamp(n)
-        self.apply_abs(n, key, new_value, meta)
-        # Mirrors rreplayBuildCanonicalRmwPayload: INCR is forwarded as SET
-        # with the resulting absolute value, not as a commutative increment.
-        frame = Frame(src, meta.rid, meta.ts, "SET", (key, new_value))
-        self.fanout(src, frame)
-        self.history.append(f"{src}: INCR {key} -> canonical SET {new_value} ts={meta.ts}/{meta.rid}")
+        self.history.append(f"{src}: INCR {key} rejected before local mutation")
 
     def unsupported_local(self, src: str, key: Key, value: Value, op: str = "XADD") -> None:
         self.history.append(f"{src}: unsupported {op} {key}={value} rejected before local mutation")
@@ -166,15 +158,14 @@ class Sim:
         return True
 
 
-def counter_counterexample() -> dict:
+def rmw_rejection() -> dict:
     sim = Sim(nodes=("A", "B"), seed=1)
     sim.local_incr("A", "ctr")
     sim.local_incr("B", "ctr")
     sim.drain()
     return {
-        "name": "concurrent canonicalized INCR loses one increment",
+        "name": "concurrent INCR attempts are rejected before local mutation",
         "values": sim.values_by_node("ctr"),
-        "expected_counter_if_increments_commuted": 2,
         "converged": sim.converged(),
         "history": sim.history,
     }
@@ -231,7 +222,7 @@ def main() -> None:
 
     results = [
         randomized_supported(args.seed, args.runs, args.steps),
-        counter_counterexample(),
+        rmw_rejection(),
         unsupported_counterexample(),
     ]
     print(json.dumps(results, indent=2, sort_keys=True))
