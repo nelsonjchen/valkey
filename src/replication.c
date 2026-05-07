@@ -1694,6 +1694,21 @@ int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **ar
     return rreplayCommandIsSupported(cmd, argv, argc, reason);
 }
 
+void replicationMVCCStampAofLoadedCommand(int dbid, struct serverCommand *cmd, robj **argv, int argc) {
+    if (!server.active_replica || !server.multi_master) return;
+    if (cmd == NULL || argv == NULL || argc <= 0 || dbid < 0) return;
+    if (cmd->proc == mvccrestoreCommand) return;
+
+    const char *reason = NULL;
+    if (!rreplayCommandIsSupported(cmd, argv, argc, &reason)) return;
+
+    unsigned long long replay_id = ++server.rreplay_seq;
+    uint64_t mvcc_ts = mvccNextLocalClock();
+    char replay_tie_break[CONFIG_RUN_ID_SIZE + 32];
+    snprintf(replay_tie_break, sizeof(replay_tie_break), "%s:aof:%llu", server.runid, replay_id);
+    mvccStampCommandKeys(cmd, argv, argc, dbid, mvcc_ts, replay_tie_break);
+}
+
 /* Return the pointer to a string representing the replica ip:listening_port
  * pair. Mostly useful for logging, since we want to log a replica using its
  * IP address and its listening port which is more clear for the user, for

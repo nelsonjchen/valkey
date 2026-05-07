@@ -1578,7 +1578,9 @@ int loadSingleAppendOnlyFile(char *filename) {
 
         if (fseek(fp, 0, SEEK_SET) == -1) goto readerr;
         rioInitWithFile(&rdb, fp);
-        if (rdbLoadRio(&rdb, RDBFLAGS_AOF_PREAMBLE, NULL) != RDB_OK) {
+        rdbSaveInfo rsi = RDB_SAVE_INFO_INIT;
+        if (rdbLoadRio(&rdb, RDBFLAGS_AOF_PREAMBLE, &rsi) != RDB_OK) {
+            rdbFreeSaveInfo(&rsi);
             if (old_style)
                 serverLog(LL_WARNING, "Error reading the RDB preamble of the AOF file %s, AOF loading aborted",
                           filename);
@@ -1588,6 +1590,11 @@ int loadSingleAppendOnlyFile(char *filename) {
             ret = AOF_FAILED;
             goto cleanup;
         } else {
+            replicationApplyRdbConfiguredUpstreams(&rsi);
+            replicationApplyRdbUpstreamRuntimeState(&rsi);
+            replicationApplyRdbMVCCState(&rsi);
+            replicationApplyRdbRReplaySeen(&rsi);
+            rdbFreeSaveInfo(&rsi);
             loadingAbsProgress(ftello(fp));
             last_progress_report_size = ftello(fp);
             if (old_style) serverLog(LL_NOTICE, "Reading the remaining AOF tail...");
@@ -1677,6 +1684,7 @@ int loadSingleAppendOnlyFile(char *filename) {
         if (cmd->proc == multiCommand) valid_before_multi = valid_up_to;
 
         /* Run the command in the context of a fake client */
+        long long dirty_before = server.dirty;
         if (fakeClient->flag.multi && fakeClient->cmd->proc != execCommand) {
             /* Note: we don't have to attempt calling evalGetCommandFlags,
              * since this is AOF, the checks in processCommand are not made
@@ -1684,6 +1692,9 @@ int loadSingleAppendOnlyFile(char *filename) {
             queueMultiCommand(fakeClient, cmd->flags);
         } else {
             cmd->proc(fakeClient);
+        }
+        if (server.dirty != dirty_before) {
+            replicationMVCCStampAofLoadedCommand(fakeClient->db->id, fakeClient->cmd, fakeClient->argv, fakeClient->argc);
         }
 
         /* The fake client should not have a reply */
@@ -2529,7 +2540,9 @@ int rewriteAppendOnlyFile(char *filename) {
 
     if (server.aof_use_rdb_preamble) {
         int error;
-        if (rdbSaveRio(REPLICA_REQ_NONE, RDB_VERSION, &aof, &error, RDBFLAGS_AOF_PREAMBLE, NULL) == C_ERR) {
+        rdbSaveInfo rsi, *rsiptr;
+        rsiptr = rdbPopulateSaveInfo(&rsi);
+        if (rdbSaveRio(REPLICA_REQ_NONE, RDB_VERSION, &aof, &error, RDBFLAGS_AOF_PREAMBLE, rsiptr) == C_ERR) {
             errno = error;
             goto werr;
         }

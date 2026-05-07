@@ -1556,7 +1556,7 @@ int rdbSaveInfoAuxFields(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         if (rdbSaveAuxFieldStrInt(rdb, "mvcc-keys-count", mvcc_count) == -1) return -1;
         server.mvcc_rdb_clock_entries_dropped_last_save = 0;
         if (mvcc_count) {
-            unsigned long cap = 0;
+            unsigned long cap = mvcc_count;
             if (server.mvcc_rdb_clock_max_entries > 0) {
                 unsigned long long configured_cap = (unsigned long long)server.mvcc_rdb_clock_max_entries;
                 cap = configured_cap > ULONG_MAX ? ULONG_MAX : (unsigned long)configured_cap;
@@ -4494,6 +4494,16 @@ rdbSaveInfo *rdbPopulateSaveInfo(rdbSaveInfo *rsi) {
      * is valid. */
     if (server.cached_primary) {
         rsi->repl_stream_db = server.cached_primary->db->id;
+        return rsi;
+    }
+
+    if (server.active_replica || server.multi_master ||
+        server.mvcc_clock ||
+        (server.mvcc_key_clock && dictSize(server.mvcc_key_clock)) ||
+        (server.rreplay_seen_order && listLength(server.rreplay_seen_order)) ||
+        (server.upstreams && listLength(server.upstreams)) ||
+        (server.upstream_runtime && listLength(server.upstream_runtime))) {
+        rsi->repl_stream_db = 0;
         return rsi;
     }
     return NULL;

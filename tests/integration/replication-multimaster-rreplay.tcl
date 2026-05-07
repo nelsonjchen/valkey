@@ -233,9 +233,10 @@ start_server {tags {"repl external:skip"}} {
         test {RDB persists configured upstream metadata} {
             set replay_tx_before [s 0 upstream_runtime_replay_tx_frames]
             set replay_ack_before [s 0 upstream_runtime_replay_ack_frames]
-            $node1 set mm:mvcc-persist seed
+            $node1 set mm:mvcc-persist stale
             set mvcc_payload [$node1 dump mm:mvcc-persist]
-            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 200 replace
+            after 1
+            $node1 set mm:mvcc-persist seed
             $node1 save
             restart_server 0 true false
 
@@ -288,7 +289,7 @@ start_server {tags {"repl external:skip"}} {
 
             assert {[s 0 upstream_runtime_replay_tx_frames] >= $replay_tx_before}
             assert {[s 0 upstream_runtime_replay_ack_frames] >= $replay_ack_before}
-            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 150 replace
+            $node1 mvccrestore mm:mvcc-persist 0 $mvcc_payload 1 replace
             assert_equal "seed" [$node1 get mm:mvcc-persist]
         }
 

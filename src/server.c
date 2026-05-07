@@ -3609,9 +3609,9 @@ bool clientSupportStandAloneRedirect(client *c) {
 static int shouldForwardToPrimaryViaRReplay(int target) {
     if (!(target & PROPAGATE_REPL)) return 0;
     if (!server.active_replica || !server.multi_master) return 0;
-    if (server.primary_host == NULL || server.primary == NULL || server.repl_state != REPL_STATE_CONNECTED) return 0;
     if (server.loading) return 0;
     if (server.current_client == NULL) return 0;
+    if (server.current_client->cmd && server.current_client->cmd->proc == mvccrestoreCommand) return 0;
     /* Never re-wrap traffic that already arrived on replication links. In MM
      * peer-forward mode, RREPLAY frames come from replica links (rreplay-peer),
      * not only from the primary link. */
@@ -4085,6 +4085,11 @@ void call(client *c, int flags) {
      * which is expected to record and reset the duration after unblocking. */
     if (!c->flag.blocked) {
         c->duration = 0;
+    }
+
+    if (dirty && c->id == CLIENT_ID_AOF && server.active_replica && server.multi_master &&
+        c->cmd->proc != execCommand && !(c->cmd->flags & CMD_MODULE)) {
+        replicationMVCCStampAofLoadedCommand(c->db->id, c->cmd, c->argv, c->argc);
     }
 
     /* Propagate the command into the AOF and replication link.

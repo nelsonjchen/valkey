@@ -3269,6 +3269,7 @@ int prepareReplicasToWrite(void);
 void replicationFeedReplicas(int dictid, robj **argv, int argc);
 void replicationFeedPrimaryWithRReplay(int dictid, robj **argv, int argc);
 int replicationCanForwardCommandWithRReplay(struct serverCommand *cmd, robj **argv, int argc, const char **reason);
+void replicationMVCCStampAofLoadedCommand(int dbid, struct serverCommand *cmd, robj **argv, int argc);
 void replicationFeedStreamFromPrimaryStream(char *buf, size_t buflen);
 void replicationDetachUpstreamRuntimeClient(client *c);
 void resetReplicationBuffer(void);
